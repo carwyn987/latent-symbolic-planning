@@ -1,6 +1,8 @@
+import logging
 import numpy as np
 import gymnasium as gym
 from typing import List, Dict, Any, Callable, Optional
+from torch.utils.data import Dataset, DataLoader
 
 def stack_datapoints(buf: List[Dict[str, Any]], num_stack: int) -> List[List[Dict[str, Any]]]:
     """
@@ -19,7 +21,9 @@ def stack_datapoints(buf: List[Dict[str, Any]], num_stack: int) -> List[List[Dic
         List of stacked sequences of length `num_stack`.
     """
     stacked_buf = []
-    assert len(buf) - num_stack >= 0
+    if len(buf) - num_stack < 0:
+        logging.error("Too few datapoints for requested stack size")
+        raise ValueError("Too few datapoints for requested stack size")
     for i in range(len(buf)-num_stack+1):
         if not any([x["done"] for x in buf[i:i+num_stack-1]]):
             stacked_buf.append(buf[i:i+num_stack])
@@ -89,4 +93,38 @@ def data_collection(
         break
     
     env.close()
+    logging.info(f"Generated a dataset of {len(data)} (SARS) tuples")
     return data
+
+class SARSDataset(Dataset):
+    def __init__(self, dataset):
+        super(SARSDataset, self).__init__()
+        self.dataset = dataset
+        
+    def __len__(self):
+        return len(self.dataset)
+    
+    def __getitem__(self, index):
+        sars = self.dataset[index]
+        if isinstance(sars, list):
+            prior_obs = np.stack(tuple(x["prior_obs"] for x in sars))
+            action = np.stack(tuple(x["action"] for x in sars))
+            obs = np.stack(tuple(x["obs"] for x in sars))
+            reward = np.stack(tuple(x["reward"] for x in sars))[:,np.newaxis]
+            done = np.stack(tuple(x["done"] for x in sars)).astype(np.uint8)[:,np.newaxis]
+            return {'prior_obs': prior_obs, 'action': action, 'reward': reward, 'obs': obs, 'done': done}
+        else:
+            return sars
+
+
+def extract_trajectories(dataset):
+    start = 0
+    for i in range(len(dataset)):
+        if isinstance(dataset[i], list):
+            if any([x["done"] for x in dataset[i]]) == True:
+                yield dataset[start:i+1]
+                start = i+1
+        else:
+            if dataset[i]["done"] == True:
+                yield dataset[start:i+1]
+                start = i+1

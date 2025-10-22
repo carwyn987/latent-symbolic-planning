@@ -1,0 +1,13 @@
+pytorch
+numpy
+matplotlib
+tqdm
+pytest
+gymnasium
+gymnasium[classic-control]
+logging
+argparse
+scikit-learn
+gymnasium[mujoco]
+swig
+gymnasium[box2d]
