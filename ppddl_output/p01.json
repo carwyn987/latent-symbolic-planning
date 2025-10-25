@@ -1,0 +1,21 @@
+{
+    "plan": [
+        "step_0"
+    ],
+    "step_0": {
+        "actions": [
+            {
+                "name": "move-s4-s1-a1",
+                "arguments": []
+            }
+        ],
+        "outcomes": [
+            {
+                "condition": [
+                    "(at s1)"
+                ],
+                "next": "GOAL"
+            }
+        ]
+    }
+}

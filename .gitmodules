@@ -1,0 +1,3 @@
+[submodule "safe-planner"]
+	path = safe-planner
+	url = git@github.com:mokhtarivahid/safe-planner.git

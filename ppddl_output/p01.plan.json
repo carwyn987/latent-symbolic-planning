@@ -1,0 +1,11 @@
+{
+    "main": {
+        "list": [
+            "move-s4-s1-a1"
+        ],
+        "ordering": "total"
+    },
+    "actions": [
+        "move-s4-s1-a1"
+    ]
+}

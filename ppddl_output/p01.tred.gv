@@ -1,0 +1,16 @@
+strict digraph "" {
+	graph [fontname=helvetica];
+	node [fontname=helvetica,
+		label="\N",
+		shape=ellipse
+	];
+	edge [fontname=helvetica];
+	"(end)"	[label=end,
+		peripheries=2,
+		shape=circle];
+	"(move-s4-s1-a1)" -> "(end)";
+	"(start)"	[label=start,
+		peripheries=1,
+		shape=circle];
+	"(start)" -> "(move-s4-s1-a1)";
+}

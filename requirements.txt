@@ -1,4 +1,4 @@
-pytorch
+#torch
 numpy
 matplotlib
 tqdm
@@ -11,3 +11,7 @@ scikit-learn
 gymnasium[mujoco]
 swig
 gymnasium[box2d]
+-r safe-planner/requirements.txt
+ply
+graphviz
+pygraphviz
