@@ -1,18 +1,35 @@
 {
     "plan": [
-        "step_0"
+        "step_0",
+        "step_1"
     ],
     "step_0": {
         "actions": [
             {
-                "name": "move-s4-s1-a1",
+                "name": "move-s28-s20-a3",
                 "arguments": []
             }
         ],
         "outcomes": [
             {
                 "condition": [
-                    "(at s1)"
+                    "(at s20)"
+                ],
+                "next": "step_1"
+            }
+        ]
+    },
+    "step_1": {
+        "actions": [
+            {
+                "name": "move-s20-s11-a0",
+                "arguments": []
+            }
+        ],
+        "outcomes": [
+            {
+                "condition": [
+                    "(at s11)"
                 ],
                 "next": "GOAL"
             }

@@ -8,9 +8,10 @@ strict digraph "" {
 	"(end)"	[label=end,
 		peripheries=2,
 		shape=circle];
-	"(move-s4-s1-a1)" -> "(end)";
+	"(move-s20-s11-a0)" -> "(end)";
+	"(move-s28-s20-a3)" -> "(move-s20-s11-a0)"	[label="(at s20)"];
 	"(start)"	[label=start,
 		peripheries=1,
 		shape=circle];
-	"(start)" -> "(move-s4-s1-a1)";
+	"(start)" -> "(move-s28-s20-a3)";
 }

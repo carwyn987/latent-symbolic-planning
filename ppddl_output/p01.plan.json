@@ -1,11 +1,13 @@
 {
     "main": {
         "list": [
-            "move-s4-s1-a1"
+            "move-s28-s20-a3",
+            "move-s20-s11-a0"
         ],
         "ordering": "total"
     },
     "actions": [
-        "move-s4-s1-a1"
+        "move-s28-s20-a3",
+        "move-s20-s11-a0"
     ]
 }

@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 import gymnasium as gym
-from data_manipulation import stack_datapoints, data_collection
+from src.data_manipulation import stack_datapoints, data_collection
 
 
 def test_stack_datapoints_basic():

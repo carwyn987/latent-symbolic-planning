@@ -1,9 +1,6 @@
-import os
-import re
-import json
 import logging
 import argparse
-import subprocess
+
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -14,18 +11,18 @@ from typing import List, Dict, Any, Callable, Optional
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
 
-from data_manipulation import stack_datapoints, \
+from src.data_manipulation import stack_datapoints, \
                             data_collection, \
                             SARSDataset, \
                             extract_trajectories
 
-from cluster import cluster, \
+from src.cluster import cluster, \
                     obs_to_cluster, \
                     analyze_k_clusters, \
                     plot_clusters
 
-from plotter import plot_transition_graph
-from converter.pddl_convert import write_ppddl_files
+from src.plotter import plot_transition_graph
+from src.planner import plan
 
 if __name__ == "__main__":
     
@@ -51,7 +48,7 @@ if __name__ == "__main__":
     
     obss = [x["obs"] for x in dataset]
     #analyze_k_clusters(obss)
-    l, c = cluster(obss, n_clusters=10, algo="spectral")
+    l, c = cluster(obss, n_clusters=30, algo="kmeans")
     #plot_clusters(obss, c)
     
     transition_samples = []
@@ -122,89 +119,11 @@ if __name__ == "__main__":
         logging.warning("WARNING: START STATE == GOAL STATE")
     
     # Planner
-    
-    output_dir = "ppddl_output"
-    problem_out = "p01"
-    domain_out = "d01"
-    
-    write_ppddl_files(
-        transitions=transition_samples_simplified,
-        num_states=len(c),
-        start_state=start_state,
-        goal_state=goal_state,
-        output_dir=output_dir,
-        problem_name=problem_out,
-        domain_name=domain_out
-    )
-    
-    # Execute
-    
-    # Load in pddl file
-    
-    domain_file = f"{output_dir}/{domain_out}.pddl"
-    problem_file = f"{output_dir}/{problem_out}.pddl"
-    # plan_file = f"{output_dir}/plan.out"
-    plan_json_file = f"{output_dir}/{problem_out}.plan.json"
-
-    print("Running Safe-Planner...")
-
-    cmd = ["./safe-planner/sp", "-j", domain_file, problem_file]
-    try:
-        result = subprocess.run(
-            cmd,
-            cwd=".",
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=120
-        )
-        print("Safe-Planner finished successfully.")
-        print(result.stdout)
-    except subprocess.CalledProcessError as e:
-        print("Safe-Planner failed.")
-        print("STDOUT:", e.stdout)
-        print("STDERR:", e.stderr)
-        raise RuntimeError("Safe-Planner execution failed.") from e
-    except FileNotFoundError:
-        raise RuntimeError("Safe-Planner binary not found at ./safe-planner/sp. Check path or permissions.")
-    except subprocess.TimeoutExpired:
-        raise RuntimeError("Safe-Planner timed out while computing the plan.")
-
-    if not os.path.exists(plan_json_file):
-        raise FileNotFoundError(f"Expected plan file {plan_json_file} not found. Planning likely failed.")
+    plan_actions, plan_transitions, state_action_map = plan(transition_samples_simplified, start_state, goal_state, len(c))
+    print("Plan actions: ", plan_actions, ", plan transitions: ", plan_transitions, ", state_action_map: ", state_action_map)
 
     # --------------------------------------------------------------------------
-    # 2. Parse the generated plan JSON
-    # --------------------------------------------------------------------------
-    print(f"Parsing plan file: {plan_json_file}")
-    with open(plan_json_file, "r") as f:
-        plan_data = json.load(f)
-
-    if "main" in plan_data and "list" in plan_data["main"]:
-        plan_actions = plan_data["main"]["list"]
-    elif "actions" in plan_data:
-        plan_actions = plan_data["actions"]
-    else:
-        raise ValueError("Invalid Safe-Planner JSON structure. Could not find 'main.list' or 'actions' keys.")
-
-    print(f"Plan contains {len(plan_actions)} actions:")
-    for a in plan_actions:
-        print(" ", a)
-
-    # --------------------------------------------------------------------------
-    # 3. Build state→action mapping from learned transitions
-    # --------------------------------------------------------------------------
-    state_action_map = {(s_from, s_to): act for s_from, s_to, act in transition_samples_simplified}
-
-    def parse_action_token(token):
-        """Parse action string like 'move-s3-s1-a1' into (3, 1)."""
-        m = re.match(r"move-s(\d+)-s(\d+)-a\d+", token)
-        return (int(m.group(1)), int(m.group(2))) if m else None
-
-    plan_transitions = [parse_action_token(a) for a in plan_actions if parse_action_token(a)]
-
-    # --------------------------------------------------------------------------
-    # 4. Execute plan in the environment
+    # 4. Execute plan in the environment (with online replanning)
     # --------------------------------------------------------------------------
     print("Executing plan in environment...")
 
@@ -214,18 +133,28 @@ if __name__ == "__main__":
 
     current_state, _ = obs_to_cluster(obs, c)
     current_state = int(current_state)
+    sa_sequence = []
 
-    for (s_from, s_to) in plan_transitions:
-        if done:
-            break
-        if current_state != s_from:
-            print(f"Expected to be in cluster s{s_from}, but in s{current_state}. Aborting.")
+    print(f"Starting execution from cluster s{current_state}, goal cluster s{goal_state}")
+
+    while not done and current_state != goal_state:
+        # Plan from current cluster to goal
+        plan_actions, plan_transitions, state_action_map = plan(
+            transition_samples_simplified, current_state, goal_state, len(c)
+        )
+
+        if not plan_transitions:
+            print(f"No plan found from s{current_state} to s{goal_state}. Stopping.")
             break
 
+        # Get the first step of the plan
+        s_from, s_to = plan_transitions[0]
         action = state_action_map.get((s_from, s_to))
         if action is None:
-            print(f"No known action for transition s{s_from}→s{s_to}.")
-            break
+            print(f"No known action for transition s{s_from}→s{s_to}. Sampling random action.")
+            action = env.action_space.sample()
+
+        print(f"Executing transition s{s_from}→s{s_to} with action {action}")
 
         # Execute until new cluster reached or episode ends
         for step in range(100):
@@ -233,9 +162,16 @@ if __name__ == "__main__":
             done = terminated or truncated
             new_state, _ = obs_to_cluster(obs, c)
             new_state = int(new_state)
-            if new_state == s_to:
-                print(f"Transition s{s_from}→s{s_to} successful.")
+
+            # Log executed (state, action) pair
+            sa_sequence.append((current_state, action))
+
+            if new_state != current_state:
+                print(f"Cluster change detected: s{current_state} → s{new_state}")
                 current_state = new_state
+                break
+
+            if done:
                 break
 
         if done:
@@ -245,6 +181,10 @@ if __name__ == "__main__":
     env.close()
     print(f"Final cluster: s{current_state}, goal: s{goal_state}")
     if current_state == goal_state:
-        print("Goal achieved.")
+        print("✅ Goal achieved.")
     else:
-        print("Plan execution stopped before reaching goal.")
+        print("⚠️ Plan execution stopped before reaching goal.")
+
+    print("Executed (state, action) sequence:")
+    for (s, a) in sa_sequence:
+        print(f"  (s{s}, {a})")
