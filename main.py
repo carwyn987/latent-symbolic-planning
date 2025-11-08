@@ -35,7 +35,14 @@ if __name__ == "__main__":
         format="%(asctime)s [%(levelname)s] %(message)s"
     )
     
+    # DEBUG
     returns = []
+    plan_failures = []
+    random_action_choices = []
+    final_states = []
+    goal_states = []
+    start_states_save = []
+    start_state_equals_goal_state = []
     
     cur_policy=None
     c = None
@@ -43,8 +50,8 @@ if __name__ == "__main__":
     for outer_loop_idx in range(3):
     
         # Collect data
-        env_name = "LunarLander-v3" #'Pendulum-v1' #"CarRacing-v3" # "CartPole-v1" 
-        dataset = data_collection(env_name, num_steps=10000, policy=cur_policy, frame_skip=None)
+        env_name = "LunarLander-v3" #"Blackjack-v1" #"CliffWalking-v0"   #'Pendulum-v1' #"CarRacing-v3" # "CartPole-v1" 
+        dataset = data_collection(env_name, num_steps=1000, policy=cur_policy, frame_skip=None)
         # dataset = stack_datapoints(dataset, 4)
 
         dataset = SARSDataset(dataset)
@@ -56,13 +63,15 @@ if __name__ == "__main__":
         
         obss = [x["obs"] for x in dataset]
         #analyze_k_clusters(obss)
-        l, c = cluster(obss, n_clusters=9, algo="kmeans")
+        l, c = cluster(obss, n_clusters=20, algo="kmeans")
         # plot_clusters(obss, c)
         
         transition_samples = []
         for traj in extract_trajectories(dataset):
             # Identify states
             d_states, distances = zip(*[obs_to_cluster(x, c) for x in traj["obs"]])
+            
+            final_states.append(traj["obs"][-1])
             
             # Get actions that move between states
             switch_state_indeces = [(i,i+1) for i in range(len(d_states)-1) if d_states[i] != d_states[i+1]]
@@ -117,6 +126,7 @@ if __name__ == "__main__":
                                             -99999999,
                                             total_reward_state_idx_arr)
         goal_state = np.argmax(total_reward_state_idx_arr)
+        goal_states.append(c[goal_state])
         
         start_state_counts = Counter(start_states)
         start_state, count = start_state_counts.most_common(1)[0]
@@ -124,6 +134,10 @@ if __name__ == "__main__":
         if start_state == goal_state:
             print("WARNING: START STATE == GOAL STATE")
             logging.warning("WARNING: START STATE == GOAL STATE")
+            start_state_equals_goal_state.append(1)
+        else:
+            start_state_equals_goal_state.append(0)
+        start_states_save.append(start_state)
         
         # Planner
         plan_actions, plan_transitions, state_action_map = plan(transition_samples_simplified, start_state, goal_state, len(c))
@@ -138,6 +152,9 @@ if __name__ == "__main__":
 
         num_trajectories_to_gen = 10
         for itr in range(num_trajectories_to_gen):
+            plan_failures.append(0)
+            random_action_choices.append(0)
+            
             obs, info = env.reset()
             done = False
 
@@ -150,6 +167,7 @@ if __name__ == "__main__":
             print(f"Starting execution from cluster s{current_state}, goal cluster s{goal_state}")
 
             while not done:# and current_state != goal_state:
+                
                 # Plan from current cluster to goal
                 plan_actions, plan_transitions, state_action_map = plan(
                     transition_samples_simplified, current_state, goal_state, len(c)
@@ -157,6 +175,7 @@ if __name__ == "__main__":
 
                 if not plan_transitions:
                     print(f"No plan found from s{current_state} to s{goal_state}. Stopping.")
+                    plan_failures[-1] += 1
                     break
 
                 # Get the first step of the plan
@@ -165,11 +184,11 @@ if __name__ == "__main__":
                 if action is None:
                     # print(f"No known action for transition s{s_from}→s{s_to}. Sampling random action.")
                     action = env.action_space.sample()
+                    random_action_choices[-1] += 1
 
                 # print(f"Executing transition s{s_from}→s{s_to} with action {action}")
 
                 # Execute until new cluster reached or episode ends
-                #for step in range(100):
                 while not done:
                     obs, reward, terminated, truncated, info = env.step(action)
                     done = terminated or truncated
@@ -207,8 +226,97 @@ if __name__ == "__main__":
     cur_policy = partial(policy, state_action_map, c)
     
     
-    plt.figure()
-    plt.plot(returns)
-    plt.xlabel("Episode")
-    plt.ylabel("Return")
+    # EVALUATION
+    
+    # Test Run
+    """
+    env = gym.make(env_name, render_mode="human")
+    obs, info = env.reset()
+    done = False
+
+    current_state, _ = obs_to_cluster(obs, c)
+    current_state = int(current_state)
+    while not done:
+        plan_actions, plan_transitions, state_action_map = plan(
+            transition_samples_simplified, current_state, goal_state, len(c)
+        )
+        if not plan_transitions:
+            print(f"No plan found from s{current_state} to s{goal_state}. Stopping.")
+            break
+
+        # Get the first step of the plan
+        s_from, s_to = plan_transitions[0]
+        action = state_action_map.get((s_from, s_to))
+        if action is None:
+            # print(f"No known action for transition s{s_from}→s{s_to}. Sampling random action.")
+            action = env.action_space.sample()
+        
+        obs, reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
+        new_state, _ = obs_to_cluster(obs, c)
+        new_state = int(new_state)
+    env.close()
+    """
+    
+    fig, ax = plt.subplots(4,1,figsize=(9,12))
+    ax[0].plot(returns)
+    ax[0].set_xlabel("Episode")
+    ax[0].set_ylabel("Return")
+    ax[1].plot(plan_failures)
+    ax[1].set_xlabel("Episode")
+    ax[1].set_ylabel("Plan Failures")
+    ax[2].plot(random_action_choices)
+    ax[2].set_xlabel("Episode")
+    ax[2].set_ylabel("Random Actions Chosen")
+    ax[3].plot(start_state_equals_goal_state)
+    ax[3].set_xlabel("Episode")
+    ax[3].set_ylabel("Start state == Goal state")
+    plt.tight_layout()
+
+    fig2 = plt.figure(figsize=(8, 6))
+    ax2 = fig2.add_subplot()
+    
+    obss2 = np.array([x.flatten() for x in obss])
+    ax2.scatter(
+        obss2[:, 0], obss2[:, 1],
+        c="gray", s=10, marker="o", alpha=0.4, label="Trajectories"
+    )
+    final_states = [np.array(x) for x in final_states]
+    final_states_np = np.stack(final_states, axis=0)
+    ax2.scatter(
+        final_states_np[:, 0], final_states_np[:, 1],
+        c="blue", s=30, marker="o", alpha=0.4, label="Final States"
+    )
+    
+    start_states_save = [c[x] for x in start_states_save]
+    start_states_save = np.stack(start_states_save, axis=0)
+    ax2.scatter(
+        start_states_save[:, 0], start_states_save[:, 1],
+        c="green", s=60, marker="X", alpha=0.8, label="Start States"
+    )
+    
+    goal_clusters = np.stack(goal_states, axis=0)
+    ax2.scatter(
+        goal_clusters[:, 0], goal_clusters[:, 1],
+        c="red", s=50, marker="X", alpha=0.4, label="Final States"
+    )
+    print("Goal clusters size: ", goal_clusters.shape)
+    
+    cluster_centers = np.stack(c, axis=0)
+    ax2.scatter(
+        cluster_centers[:, 0], cluster_centers[:, 1],
+        c="black", s=30, marker="o", alpha=1, label="Cluster centers"
+    )
+    # --- Plot direction vectors ---
+    ax2.quiver(
+        cluster_centers[:, 0], cluster_centers[:, 1],   # start points
+        cluster_centers[:, 2], cluster_centers[:, 3],   # direction vectors (u, v)
+        angles='xy', scale_units='xy', scale=1, color='black', width=0.003
+    )
+    plt.legend()
+    
+    print("Cluster centers size: ", cluster_centers.shape)
+    
+    print("Transition Samples: \n", transition_samples_simplified)
+    
     plt.show()

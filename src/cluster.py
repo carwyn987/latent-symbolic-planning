@@ -106,7 +106,9 @@ def dbscan(data, eps=0.5, min_samples=5):
 
  
 def kmeans(data, n_clusters):
-    data = [x.flatten() for x in data]
+    data = np.array([x.flatten() if isinstance(x, np.ndarray) else np.array(x) for x in data])
+    if data.ndim == 1:
+        data = data.reshape(-1,1)
     kmeans = KMeans(n_clusters=n_clusters, random_state=42)
     kmeans.fit(data)
 
@@ -117,8 +119,25 @@ def kmeans(data, n_clusters):
     return labels, centers
 
 def obs_to_cluster(obs, centers):
-    difs = [obs.flatten()-c for c in centers]
-    euclidean_dist = [np.sqrt(np.sum(np.pow(d, 2))) for d in difs]
+    # Ensure inputs are numpy arrays
+    obs = np.array(obs)
+    centers = np.array(centers)
+
+    # Flatten the observation if multi-dimensional
+    if obs.ndim > 1:
+        obs = obs.flatten()
+    if centers.ndim == 1:
+        centers = centers.reshape(-1, 1)
+
+    # Handle case where obs is scalar or 1D but centers are multi-D
+    if obs.ndim == 1 and centers.shape[1] != obs.shape[0]:
+        obs = obs.reshape(-1)
+
+    # Compute Euclidean distances
+    difs = centers - obs
+    euclidean_dist = np.sqrt(np.sum(np.square(difs), axis=1))
+
+    # Return nearest cluster index and all distances
     return np.argmin(euclidean_dist), euclidean_dist
 
 
