@@ -71,7 +71,12 @@ def data_collection(
         while not done:
             prior_obs = np.copy(obs)
             
-            a = env.action_space.sample()
+            a = None
+            if policy:
+                a = policy(obs)
+            if a is None:
+                a = env.action_space.sample()
+
             obs, reward, terminated, truncated, info = env.step(a)
             done = terminated or truncated
             

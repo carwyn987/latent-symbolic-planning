@@ -2,7 +2,8 @@ import subprocess
 import json, os
 from src.pddl_convert import write_ppddl_files
 import re
-
+from src.cluster import obs_to_cluster
+                        
 def plan(transitions, start_state, goal_state, num_states):
     
     # Create plan files
@@ -10,6 +11,7 @@ def plan(transitions, start_state, goal_state, num_states):
     problem_out = "p01"
     domain_out = "d01"
     
+    print("##############################################\nRUNNING PLANNER\n")
     write_ppddl_files(
         transitions=transitions,
         num_states=num_states,
@@ -29,10 +31,11 @@ def plan(transitions, start_state, goal_state, num_states):
         result = subprocess.run(
             cmd,
             cwd=".",
-            capture_output=True,
-            text=True,
+            capture_output=False,
+            text=False,
             check=True,
-            timeout=120
+            timeout=120,
+            stdout=None
         )
         print("Safe-Planner finished successfully.")
         print(result.stdout)
@@ -80,4 +83,13 @@ def plan(transitions, start_state, goal_state, num_states):
 
     plan_transitions = [parse_action_token(a) for a in plan_actions if parse_action_token(a)]
     
+    print("##############################################\nFINISHED RUNNING PLANNER\n")
     return plan_actions, plan_transitions, state_action_map
+
+def policy(state_action_map, cluster_centers, state):
+    obs_cluster = obs_to_cluster(state, cluster_centers)
+    if obs_cluster in state_action_map.keys():
+        assert isinstance(state_action_map[obs_cluster], int)
+        return state_action_map[obs_cluster]
+    else:
+        return None
