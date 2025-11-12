@@ -26,7 +26,7 @@ from src.plotter import plot_transition_graph
 from src.planner import plan, policy
 
 if __name__ == "__main__":
-    
+
     # Setup logger
     logging.basicConfig(
         filename='logs/app.log',
@@ -34,7 +34,7 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s"
     )
-    
+
     # DEBUG
     returns = []
     plan_failures = []
@@ -43,48 +43,42 @@ if __name__ == "__main__":
     goal_states = []
     start_states_save = []
     start_state_equals_goal_state = []
-    
+
     cur_policy=None
     c = None
-    
-    for outer_loop_idx in range(3):
-    
+    num_act_apply = 10
+
+    for outer_loop_idx in range(1):
+
         # Collect data
         env_name = "LunarLander-v3" #"Blackjack-v1" #"CliffWalking-v0"   #'Pendulum-v1' #"CarRacing-v3" # "CartPole-v1" 
-        dataset = data_collection(env_name, num_steps=1000, policy=cur_policy, frame_skip=None)
+        dataset = data_collection(env_name, num_steps=1000, policy=cur_policy, frame_skip=None, num_act_apply=num_act_apply)
         # dataset = stack_datapoints(dataset, 4)
 
         dataset = SARSDataset(dataset)
         # for k,v in dataset[0].items():
         #     print(k, " : ", v.shape if isinstance(v,np.ndarray) else type(v))
-            
-        # Define a size threshold
-        # If > threshold, we need to autoencode
-        
+
         obss = [x["obs"] for x in dataset]
-        #analyze_k_clusters(obss)
+        # analyze_k_clusters(obss)
         l, c = cluster(obss, n_clusters=20, algo="kmeans")
         # plot_clusters(obss, c)
-        
+
         transition_samples = []
         for traj in extract_trajectories(dataset):
             # Identify states
             d_states, distances = zip(*[obs_to_cluster(x, c) for x in traj["obs"]])
-            
+
             final_states.append(traj["obs"][-1])
-            
+
             # Get actions that move between states
             switch_state_indeces = [(i,i+1) for i in range(len(d_states)-1) if d_states[i] != d_states[i+1]]
             switch_sa = [(int(d_states[i]), int(d_states[j]), int(traj["action"][i])) for (i,j) in switch_state_indeces]
             transition_samples += switch_sa
-            
-        # Analyze distribution of actions
-        # Since I'm using the one-step transition, we don't have a distr
-        # Actually , we do, because we have duplicates
-        
-        #print(transition_samples)
-        #plot_transition_graph(transition_samples)
-        
+
+        # Analyze distribution of actions (due to duplicates)
+        # plot_transition_graph(transition_samples)
+
         # Aggregate duplicates
         transition_map = {}
         for x in transition_samples: # S, S', A
@@ -92,7 +86,7 @@ if __name__ == "__main__":
                 transition_map[(x[0], x[1])].append(x[2])
             else:
                 transition_map[(x[0], x[1])] = [x[2]]
-        
+
         # Aggregate aggregates to single action (in future, maybe prob. distr)
         for k,v in transition_map.items():
             if len(v) > 1:
@@ -100,10 +94,10 @@ if __name__ == "__main__":
                 transition_map[k] = most_common_element
             else:
                 transition_map[k] = v[0]
-                
+
         transition_samples_simplified = [(k[0], k[1], v) for k,v in transition_map.items()]
         # plot_transition_graph(transition_samples_simplified)
-        
+
         # Identify goal state, start_state (if we don't know, use curiosity to map out more sars transitions?)
         total_reward_state_idx_map = {clust: np.array([0.0]) for clust in range(len(c))}
         start_states = []
@@ -114,12 +108,12 @@ if __name__ == "__main__":
             # Naive reward : valuation of state
             # for i in range(len(d_states)):
             #     total_reward_state_idx_map[d_states[i]] += rewards[i]
-            
+
             # Use episode return / final state
             return_ = np.sum(rewards)
             last_state = d_states[-1]
             total_reward_state_idx_map[d_states[-1]] += return_ # TODO: Make mean, so I can fix my -99999 below
-                
+
         total_reward_state_idx_arr = np.concatenate([total_reward_state_idx_map[i] for i in range(len(c))])
         # Mask zeroes (no data) - TODO: TASK-SPECIFIC-ASSUMPTION
         total_reward_state_idx_arr = np.where(total_reward_state_idx_arr == 0,
@@ -127,7 +121,7 @@ if __name__ == "__main__":
                                             total_reward_state_idx_arr)
         goal_state = np.argmax(total_reward_state_idx_arr)
         goal_states.append(c[goal_state])
-        
+
         start_state_counts = Counter(start_states)
         start_state, count = start_state_counts.most_common(1)[0]
         print("Planned start_state: ", start_state, ", goal_state: ", goal_state)
@@ -138,7 +132,7 @@ if __name__ == "__main__":
         else:
             start_state_equals_goal_state.append(0)
         start_states_save.append(start_state)
-        
+
         # Planner
         plan_actions, plan_transitions, state_action_map = plan(transition_samples_simplified, start_state, goal_state, len(c))
         # print("Plan actions: ", plan_actions, ", plan transitions: ", plan_transitions, ", state_action_map: ", state_action_map)
@@ -154,20 +148,20 @@ if __name__ == "__main__":
         for itr in range(num_trajectories_to_gen):
             plan_failures.append(0)
             random_action_choices.append(0)
-            
+
             obs, info = env.reset()
             done = False
 
             current_state, _ = obs_to_cluster(obs, c)
             current_state = int(current_state)
             sa_sequence = []
-            
+
             returns.append(0.0)
 
             print(f"Starting execution from cluster s{current_state}, goal cluster s{goal_state}")
 
             while not done:# and current_state != goal_state:
-                
+
                 # Plan from current cluster to goal
                 plan_actions, plan_transitions, state_action_map = plan(
                     transition_samples_simplified, current_state, goal_state, len(c)
@@ -190,7 +184,8 @@ if __name__ == "__main__":
 
                 # Execute until new cluster reached or episode ends
                 while not done:
-                    obs, reward, terminated, truncated, info = env.step(action)
+                    for _ in range(num_act_apply):
+                        obs, reward, terminated, truncated, info = env.step(action)
                     done = terminated or truncated
                     new_state, _ = obs_to_cluster(obs, c)
                     new_state = int(new_state)
@@ -211,7 +206,6 @@ if __name__ == "__main__":
                     print("Episode ended early.")
                     break
 
-            
             print(f"Final cluster: s{current_state}, goal: s{goal_state}, done: {done}")
             if current_state == goal_state:
                 print("Goal achieved.")
@@ -221,13 +215,12 @@ if __name__ == "__main__":
             # print("Executed (state, action) sequence:")
             # for (s, a) in sa_sequence:
             #     print(f"  (s{s}, {a})")
-                
+
     env.close()
     cur_policy = partial(policy, state_action_map, c)
-    
-    
+
     # EVALUATION
-    
+
     # Test Run
     """
     env = gym.make(env_name, render_mode="human")
@@ -257,7 +250,7 @@ if __name__ == "__main__":
         new_state = int(new_state)
     env.close()
     """
-    
+
     fig, ax = plt.subplots(4,1,figsize=(9,12))
     ax[0].plot(returns)
     ax[0].set_xlabel("Episode")
@@ -275,7 +268,7 @@ if __name__ == "__main__":
 
     fig2 = plt.figure(figsize=(8, 6))
     ax2 = fig2.add_subplot()
-    
+
     obss2 = np.array([x.flatten() for x in obss])
     ax2.scatter(
         obss2[:, 0], obss2[:, 1],
@@ -287,21 +280,21 @@ if __name__ == "__main__":
         final_states_np[:, 0], final_states_np[:, 1],
         c="blue", s=30, marker="o", alpha=0.4, label="Final States"
     )
-    
+
     start_states_save = [c[x] for x in start_states_save]
     start_states_save = np.stack(start_states_save, axis=0)
     ax2.scatter(
         start_states_save[:, 0], start_states_save[:, 1],
-        c="green", s=60, marker="X", alpha=0.8, label="Start States"
+        c="green", s=70, marker="X", alpha=0.8, label="Start State(s)"
     )
-    
+
     goal_clusters = np.stack(goal_states, axis=0)
     ax2.scatter(
         goal_clusters[:, 0], goal_clusters[:, 1],
-        c="red", s=50, marker="X", alpha=0.4, label="Final States"
+        c="red", s=70, marker="X", alpha=0.7, label="Goal Cluster(s)"
     )
     print("Goal clusters size: ", goal_clusters.shape)
-    
+
     cluster_centers = np.stack(c, axis=0)
     ax2.scatter(
         cluster_centers[:, 0], cluster_centers[:, 1],
@@ -314,9 +307,9 @@ if __name__ == "__main__":
         angles='xy', scale_units='xy', scale=1, color='black', width=0.003
     )
     plt.legend()
-    
+
     print("Cluster centers size: ", cluster_centers.shape)
-    
+
     print("Transition Samples: \n", transition_samples_simplified)
-    
+
     plt.show()

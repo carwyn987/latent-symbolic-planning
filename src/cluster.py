@@ -23,7 +23,6 @@ def cluster(data, n_clusters=None, algo="minibatch_kmeans", **kwargs):
     Generic clustering entry point.
     Supported algos: minibatch_kmeans, gmm, agglomerative, spectral, dbscan
     """
-    start_time = datetime.now()
     logging.info(f"Begin clustering with {algo} algorithm")
 
     if algo == "kmeans":

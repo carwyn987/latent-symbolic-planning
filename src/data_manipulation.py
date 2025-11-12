@@ -36,6 +36,7 @@ def data_collection(
     num_episodes: Optional[int] = None,
     policy: Optional[Callable[[np.ndarray], np.ndarray]] = None,
     frame_skip: Optional[int] = None,
+    num_act_apply: Optional[int] = 1
 ) -> List[Dict[str, Any]]:
     """
     Collect transition data from a Gymnasium environment.
@@ -77,8 +78,11 @@ def data_collection(
             if a is None:
                 a = env.action_space.sample()
 
-            obs, reward, terminated, truncated, info = env.step(a)
-            done = terminated or truncated
+            for _ in range(num_act_apply):
+                obs, reward, terminated, truncated, info = env.step(a)
+                done = terminated or truncated
+                if done:
+                    break
             
             # Add to dataset
             if not frame_skip or step_itr % frame_skip == 0:
