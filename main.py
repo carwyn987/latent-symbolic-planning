@@ -1,6 +1,6 @@
 import logging
 import argparse
-
+import random
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -24,6 +24,7 @@ from src.cluster import cluster, \
 
 from src.plotter import plot_transition_graph
 from src.planner import plan, policy
+from src.wrap_pddlgym import *
 
 if __name__ == "__main__":
 
@@ -46,12 +47,12 @@ if __name__ == "__main__":
 
     cur_policy=None
     c = None
-    num_act_apply = 20
+    num_act_apply = 4 
 
-    for outer_loop_idx in range(3):
+    for outer_loop_idx in range(1):
 
         # Collect data
-        env_name = "LunarLander-v3" #"Blackjack-v1" #"CliffWalking-v0"   #'Pendulum-v1' #"CarRacing-v3" # "CartPole-v1" 
+        env_name = ""
         dataset = data_collection(env_name, num_steps=1000, policy=cur_policy, frame_skip=None, num_act_apply=num_act_apply)
         # dataset = stack_datapoints(dataset, 4)
 
@@ -61,7 +62,7 @@ if __name__ == "__main__":
 
         obss = [x["obs"] for x in dataset]
         # analyze_k_clusters(obss)
-        l, c = cluster(obss, n_clusters=20, algo="kmeans", add_start=True, add_end=True) # 
+        l, c = cluster(obss, n_clusters=100, algo="kmeans", add_start=False, add_end=False)
         # plot_clusters(obss, c)
 
         transition_samples = []
@@ -134,9 +135,9 @@ if __name__ == "__main__":
         start_states_save.append(start_state)
         
         ### TEMPORARY ####
-        start_state = 20 # obs_to_cluster([0,1.5,0,0,0,0,0,0], c)
-        goal_state = 21 # obs_to_cluster([0,0,0,0,0,0,0,0], c)
-        print(start_state, goal_state)
+        #start_state = 20 # obs_to_cluster([0,1.5,0,0,0,0,0,0], c)
+        #goal_state = 21 # obs_to_cluster([0,0,0,0,0,0,0,0], c)
+        #print(start_state, goal_state)
 
         # Planner
         plan_actions, plan_transitions, state_action_map = plan(transition_samples_simplified, start_state, goal_state, len(c))
@@ -147,7 +148,10 @@ if __name__ == "__main__":
         # --------------------------------------------------------------------------
         print("Executing plan in environment...")
 
-        env = gym.make(env_name, render_mode="rgb_array")
+        if env_name == "":
+            env = EnvWrapped()
+        else:
+            env = gym.make(env_name, render_mode="rgb_array")
 
         num_trajectories_to_gen = 10
         for itr in range(num_trajectories_to_gen):
@@ -165,7 +169,10 @@ if __name__ == "__main__":
 
             print(f"Starting execution from cluster s{current_state}, goal cluster s{goal_state}")
 
-            while not done:# and current_state != goal_state:
+            max_steps_per_ep = 10
+            step_idx = 0
+            while not done and step_idx < max_steps_per_ep:# and current_state != goal_state:
+                step_idx += 1
 
                 # Plan from current cluster to goal
                 plan_actions, plan_transitions, state_action_map = plan(
@@ -180,32 +187,20 @@ if __name__ == "__main__":
                 # Get the first step of the plan
                 s_from, s_to = plan_transitions[0]
                 action = state_action_map.get((s_from, s_to))
-                if action is None:
+                if action is None or random.random() > 0.50:
                     # print(f"No known action for transition s{s_from}→s{s_to}. Sampling random action.")
                     action = env.action_space.sample()
                     random_action_choices[-1] += 1
 
                 # print(f"Executing transition s{s_from}→s{s_to} with action {action}")
+                obs, reward, terminated, truncated, info = env.step(action)
+                done = terminated or truncated
+                new_state, _ = obs_to_cluster(obs, c)
+                new_state = int(new_state)
+                returns[-1] += reward
 
-                # Execute until new cluster reached or episode ends
-                while not done:
-                    for _ in range(num_act_apply):
-                        obs, reward, terminated, truncated, info = env.step(action)
-                    done = terminated or truncated
-                    new_state, _ = obs_to_cluster(obs, c)
-                    new_state = int(new_state)
-                    returns[-1] += reward
-
-                    # Log executed (state, action) pair
-                    sa_sequence.append((current_state, action))
-
-                    if new_state != current_state:
-                        # print(f"Cluster change detected: s{current_state} → s{new_state}")
-                        current_state = new_state
-                        break
-
-                    if done:
-                        break
+                # Log executed (state, action) pair
+                sa_sequence.append((current_state, action))
 
                 if done:
                     print("Episode ended early.")
@@ -227,13 +222,19 @@ if __name__ == "__main__":
     # EVALUATION
 
     # Test Run
-    env = gym.make(env_name, render_mode="human")
+    if env_name == "":
+        env = EnvWrapped()
+    else:
+        env = gym.make(env_name, render_mode="human")
     obs, info = env.reset()
     done = False
 
     current_state, _ = obs_to_cluster(obs, c)
     current_state = int(current_state)
-    while not done:
+    max_steps = 200
+    step_idx = 0
+    while not done and step_idx < max_steps:
+        step_idx += 1
         plan_actions, plan_transitions, state_action_map = plan(
             transition_samples_simplified, current_state, goal_state, len(c)
         )

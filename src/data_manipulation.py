@@ -4,6 +4,8 @@ import gymnasium as gym
 from typing import List, Dict, Any, Callable, Optional
 from torch.utils.data import Dataset, DataLoader
 
+from src.wrap_pddlgym import EnvWrapped
+
 def stack_datapoints(buf: List[Dict[str, Any]], num_stack: int) -> List[List[Dict[str, Any]]]:
     """
     Stack consecutive datapoints while excluding sequences that cross episode boundaries.
@@ -59,7 +61,10 @@ def data_collection(
     list of dict
         Collected transitions containing 'prior_obs', 'action', 'reward', 'obs', 'done', 'episode', 'timestep'.
     """
-    env = gym.make(env_name, render_mode="rgb_array")
+    if env_name == "":
+        env = EnvWrapped()
+    else:
+        env = gym.make(env_name, render_mode="rgb_array")
     obs, info = env.reset()
     
     # Set up dataloader
