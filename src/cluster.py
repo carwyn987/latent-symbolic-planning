@@ -116,7 +116,10 @@ def dbscan(data, eps=0.5, min_samples=5):
 
  
 def kmeans(data, n_clusters):
-    data = np.array([x.flatten() if isinstance(x, np.ndarray) else np.array(x) for x in data])
+    """
+    specifically for lunar lander
+    """
+    data = np.array([x[0:2].flatten() if isinstance(x, np.ndarray) else np.array(x) for x in data])
     if data.ndim == 1:
         data = data.reshape(-1,1)
     kmeans = KMeans(n_clusters=n_clusters, random_state=42)
@@ -125,6 +128,7 @@ def kmeans(data, n_clusters):
     # Get cluster assignments and centers
     labels = kmeans.labels_
     centers = kmeans.cluster_centers_
+    centers = np.concatenate([centers, np.zeros((centers.shape[0],6))], axis=1) 
     
     return labels, centers
 

@@ -26,7 +26,7 @@ def plan(transitions, start_state, goal_state, num_states):
     problem_file = f"{output_dir}/{problem_out}.pddl"
     
     # print("Running Safe-Planner...")
-    cmd = ["./safe-planner/sp", "-j", domain_file, problem_file]
+    cmd = ["./safe-planner/sp", "-v 2", "-j", domain_file, problem_file]
     try:
         result = subprocess.run(
             cmd,

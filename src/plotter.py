@@ -55,6 +55,7 @@ def plot_transition_graph(transition_samples):
                     alpha=0.75,
                     edge_color="gray",
                     arrows=True,
+                    arrowsize=30,
                     connectionstyle=f"arc3,rad={rad}"
                 )
             drawn_edges.add((u, v))
@@ -69,6 +70,7 @@ def plot_transition_graph(transition_samples):
                 alpha=0.75,
                 edge_color="gray",
                 arrows=True,
+                arrowsize=30,
                 connectionstyle="arc3,rad=0"
             )
 
@@ -79,4 +81,4 @@ def plot_transition_graph(transition_samples):
     plt.title("Directed State Transition Graph (Separate Direction Counts)")
     plt.axis("off")
     plt.tight_layout()
-    plt.show()
+    #plt.show()

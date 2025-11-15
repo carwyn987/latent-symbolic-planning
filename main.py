@@ -48,11 +48,11 @@ if __name__ == "__main__":
     c = None
     num_act_apply = 20
 
-    for outer_loop_idx in range(3):
+    for outer_loop_idx in range(1):
 
         # Collect data
         env_name = "LunarLander-v3" #"Blackjack-v1" #"CliffWalking-v0"   #'Pendulum-v1' #"CarRacing-v3" # "CartPole-v1" 
-        dataset = data_collection(env_name, num_steps=1000, policy=cur_policy, frame_skip=None, num_act_apply=num_act_apply)
+        dataset = data_collection(env_name, num_steps=None, num_episodes=1000, policy=cur_policy, frame_skip=None, num_act_apply=num_act_apply)
         # dataset = stack_datapoints(dataset, 4)
 
         dataset = SARSDataset(dataset)
@@ -61,7 +61,8 @@ if __name__ == "__main__":
 
         obss = [x["obs"] for x in dataset]
         # analyze_k_clusters(obss)
-        l, c = cluster(obss, n_clusters=20, algo="kmeans", add_start=True, add_end=True) # 
+        n_clusters = 10
+        l, c = cluster(obss, n_clusters=n_clusters, algo="kmeans", add_start=True, add_end=True)
         # plot_clusters(obss, c)
 
         transition_samples = []
@@ -77,7 +78,7 @@ if __name__ == "__main__":
             transition_samples += switch_sa
 
         # Analyze distribution of actions (due to duplicates)
-        # plot_transition_graph(transition_samples)
+        plot_transition_graph(transition_samples)
 
         # Aggregate duplicates
         transition_map = {}
@@ -96,7 +97,9 @@ if __name__ == "__main__":
                 transition_map[k] = v[0]
 
         transition_samples_simplified = [(k[0], k[1], v) for k,v in transition_map.items()]
-        # plot_transition_graph(transition_samples_simplified)
+        plot_transition_graph(transition_samples_simplified)
+        logging.info("TRANSITION MAP")
+        logging.info(transition_samples_simplified)
 
         # Identify goal state, start_state (if we don't know, use curiosity to map out more sars transitions?)
         total_reward_state_idx_map = {clust: np.array([0.0]) for clust in range(len(c))}
@@ -134,8 +137,8 @@ if __name__ == "__main__":
         start_states_save.append(start_state)
         
         ### TEMPORARY ####
-        start_state = 20 # obs_to_cluster([0,1.5,0,0,0,0,0,0], c)
-        goal_state = 21 # obs_to_cluster([0,0,0,0,0,0,0,0], c)
+        start_state = len(c)-2 # obs_to_cluster([0,1.5,0,0,0,0,0,0], c)
+        goal_state = len(c)-1 # obs_to_cluster([0,0,0,0,0,0,0,0], c)
         print(start_state, goal_state)
 
         # Planner
@@ -147,7 +150,7 @@ if __name__ == "__main__":
         # --------------------------------------------------------------------------
         print("Executing plan in environment...")
 
-        env = gym.make(env_name, render_mode="rgb_array")
+        env = gym.make(env_name, gravity=-1.0, render_mode="rgb_array")
 
         num_trajectories_to_gen = 10
         for itr in range(num_trajectories_to_gen):
@@ -227,9 +230,12 @@ if __name__ == "__main__":
     # EVALUATION
 
     # Test Run
-    env = gym.make(env_name, render_mode="human")
+    env = gym.make(env_name, gravity=-1.0, render_mode="human")
     obs, info = env.reset()
     done = False
+    
+    test_cluster_list = []
+    test_action_list = []
 
     current_state, _ = obs_to_cluster(obs, c)
     current_state = int(current_state)
@@ -250,11 +256,13 @@ if __name__ == "__main__":
         
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
-        new_state, _ = obs_to_cluster(obs, c)
-        new_state = int(new_state)
+        current_state, _ = obs_to_cluster(obs, c)
+        current_state = int(current_state)
+        test_cluster_list.append(current_state)
+        test_action_list.append(action)
     env.close()
 
-    fig, ax = plt.subplots(4,1,figsize=(9,12))
+    fig, ax = plt.subplots(6,1,figsize=(9,12))
     ax[0].plot(returns)
     ax[0].set_xlabel("Episode")
     ax[0].set_ylabel("Return")
@@ -267,6 +275,14 @@ if __name__ == "__main__":
     ax[3].plot(start_state_equals_goal_state)
     ax[3].set_xlabel("Episode")
     ax[3].set_ylabel("Start state == Goal state")
+    
+    ax[4].plot(test_cluster_list)
+    ax[4].set_xlabel("step")
+    ax[4].set_ylabel("cluster, in test episode")
+    
+    ax[5].plot(test_action_list)
+    ax[5].set_xlabel("step")
+    ax[5].set_ylabel("action, in test episode")
     plt.tight_layout()
 
     fig2 = plt.figure(figsize=(8, 6))
@@ -303,6 +319,17 @@ if __name__ == "__main__":
         cluster_centers[:, 0], cluster_centers[:, 1],
         c="black", s=30, marker="o", alpha=1, label="Cluster centers"
     )
+    # Add labels (indices)
+    for idx in range(cluster_centers.shape[0]):
+        ax2.text(
+            cluster_centers[idx][0], cluster_centers[idx][1],
+            str(idx),
+            fontsize=10,
+            ha="center",
+            va="center",
+            color="red"
+        )
+
     # --- Plot direction vectors ---
     ax2.quiver(
         cluster_centers[:, 0], cluster_centers[:, 1],   # start points

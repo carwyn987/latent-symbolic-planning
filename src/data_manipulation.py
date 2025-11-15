@@ -59,7 +59,7 @@ def data_collection(
     list of dict
         Collected transitions containing 'prior_obs', 'action', 'reward', 'obs', 'done', 'episode', 'timestep'.
     """
-    env = gym.make(env_name, render_mode="rgb_array")
+    env = gym.make(env_name, gravity=-1.0, render_mode="rgb_array")
     obs, info = env.reset()
     
     # Set up dataloader
@@ -91,11 +91,11 @@ def data_collection(
                 )
             
             step_itr += 1
-            if num_steps and step_itr == num_steps:
+            if num_steps and step_itr >= num_steps:
                 break
         else:
             episode_itr += 1
-            if num_episodes and episode_itr == num_episodes:
+            if num_episodes and episode_itr >= num_episodes:
                 break
             obs, info = env.reset()
             continue
