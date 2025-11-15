@@ -46,9 +46,9 @@ if __name__ == "__main__":
 
     cur_policy=None
     c = None
-    num_act_apply = 10
+    num_act_apply = 20
 
-    for outer_loop_idx in range(1):
+    for outer_loop_idx in range(3):
 
         # Collect data
         env_name = "LunarLander-v3" #"Blackjack-v1" #"CliffWalking-v0"   #'Pendulum-v1' #"CarRacing-v3" # "CartPole-v1" 
@@ -61,7 +61,7 @@ if __name__ == "__main__":
 
         obss = [x["obs"] for x in dataset]
         # analyze_k_clusters(obss)
-        l, c = cluster(obss, n_clusters=20, algo="kmeans")
+        l, c = cluster(obss, n_clusters=20, algo="kmeans", add_start=True, add_end=True) # 
         # plot_clusters(obss, c)
 
         transition_samples = []
@@ -132,6 +132,11 @@ if __name__ == "__main__":
         else:
             start_state_equals_goal_state.append(0)
         start_states_save.append(start_state)
+        
+        ### TEMPORARY ####
+        start_state = 20 # obs_to_cluster([0,1.5,0,0,0,0,0,0], c)
+        goal_state = 21 # obs_to_cluster([0,0,0,0,0,0,0,0], c)
+        print(start_state, goal_state)
 
         # Planner
         plan_actions, plan_transitions, state_action_map = plan(transition_samples_simplified, start_state, goal_state, len(c))
@@ -222,7 +227,6 @@ if __name__ == "__main__":
     # EVALUATION
 
     # Test Run
-    """
     env = gym.make(env_name, render_mode="human")
     obs, info = env.reset()
     done = False
@@ -249,7 +253,6 @@ if __name__ == "__main__":
         new_state, _ = obs_to_cluster(obs, c)
         new_state = int(new_state)
     env.close()
-    """
 
     fig, ax = plt.subplots(4,1,figsize=(9,12))
     ax[0].plot(returns)

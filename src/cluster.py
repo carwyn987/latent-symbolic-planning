@@ -18,28 +18,39 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
 
-def cluster(data, n_clusters=None, algo="minibatch_kmeans", **kwargs):
+def cluster(data, n_clusters=None, algo="minibatch_kmeans", add_start=False, add_end=False, **kwargs):
     """
     Generic clustering entry point.
     Supported algos: minibatch_kmeans, gmm, agglomerative, spectral, dbscan
     """
     logging.info(f"Begin clustering with {algo} algorithm")
-
+    
     if algo == "kmeans":
-        return kmeans(data, n_clusters)
+        labels, clusters = kmeans(data, n_clusters)
     elif algo == "minibatch_kmeans":
-        return minibatch_kmeans(data, n_clusters)
+        labels, clusters = minibatch_kmeans(data, n_clusters)
     elif algo == "gmm":
-        return gmm_cluster(data, n_clusters)
+        labels, clusters = gmm_cluster(data, n_clusters)
     elif algo == "agglomerative":
-        return agglomerative_cluster(data, n_clusters)
+        labels, clusters = agglomerative_cluster(data, n_clusters)
     elif algo == "spectral":
-        return spectral_cluster(data, n_clusters)
+        labels, clusters = spectral_cluster(data, n_clusters)
     elif algo == "dbscan":
-        return dbscan(data, **kwargs)
-
-    raise ValueError(f"Unsupported algorithm: {algo}")
-
+        labels, clusters = dbscan(data, **kwargs)
+    else:
+        raise ValueError(f"Unsupported algorithm: {algo}")
+    
+    if add_start:
+        # Add a cluster at start euclidean point, no velocity
+        start_cluster = np.array([[0,1.5,0,0,0,0,0,0]])
+        clusters = np.concatenate([clusters, start_cluster], axis=0)
+    
+    if add_end:
+        # Add a cluster at start euclidean point, no velocity
+        end_cluster = np.array([[0,0,0,0,0,0,1,1]])
+        clusters = np.concatenate([clusters, end_cluster], axis=0)
+        
+    return labels, clusters
    
 def minibatch_kmeans(data, n_clusters):
     """
