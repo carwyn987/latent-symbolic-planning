@@ -59,7 +59,7 @@ def data_collection(
     list of dict
         Collected transitions containing 'prior_obs', 'action', 'reward', 'obs', 'done', 'episode', 'timestep'.
     """
-    env = gym.make(env_name, gravity=-1.0, render_mode="rgb_array")
+    env = gym.make(env_name, gravity=-2.0, render_mode="rgb_array")
     obs, info = env.reset()
     
     # Set up dataloader
@@ -80,6 +80,8 @@ def data_collection(
 
             for _ in range(num_act_apply):
                 obs, reward, terminated, truncated, info = env.step(a)
+                env.unwrapped.lander.angle = 0
+                env.unwrapped.lander.linearVelocity = np.clip(env.unwrapped.lander.linearVelocity, a_min=-1.0, a_max=1.0)
                 done = terminated or truncated
                 if done:
                     break

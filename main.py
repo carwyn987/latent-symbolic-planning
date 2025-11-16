@@ -22,8 +22,11 @@ from src.cluster import cluster, \
                     analyze_k_clusters, \
                     plot_clusters
 
-from src.plotter import plot_transition_graph
+from src.plotter import plot_transition_graph, \
+                        plot_action_vectors
 from src.planner import plan, policy
+from src.eval import eval_random, \
+                     eval_policy
 
 if __name__ == "__main__":
 
@@ -46,27 +49,28 @@ if __name__ == "__main__":
 
     cur_policy=None
     c = None
-    num_act_apply = 20
+    num_act_apply = 20 
+
+    # Collect data
+    env_name = "LunarLander-v3" #"Blackjack-v1" #"CliffWalking-v0"   #'Pendulum-v1' #"CarRacing-v3" # "CartPole-v1" 
+    dataset = data_collection(env_name, num_steps=25000, num_episodes=None, policy=cur_policy, frame_skip=None, num_act_apply=num_act_apply)
+    # dataset = stack_datapoints(dataset, 4)
+    sars_dataset = SARSDataset(dataset)
+    obss = [x["obs"] for x in sars_dataset]
+    n_clusters = 20
+    l, c = cluster(obss, n_clusters=n_clusters, algo="kmeans", add_start=True, add_end=True)
+    # plot_clusters(obss, c)
+    # analyze_k_clusters(obss)
+
 
     for outer_loop_idx in range(1):
-
-        # Collect data
-        env_name = "LunarLander-v3" #"Blackjack-v1" #"CliffWalking-v0"   #'Pendulum-v1' #"CarRacing-v3" # "CartPole-v1" 
-        dataset = data_collection(env_name, num_steps=None, num_episodes=1000, policy=cur_policy, frame_skip=None, num_act_apply=num_act_apply)
-        # dataset = stack_datapoints(dataset, 4)
-
-        dataset = SARSDataset(dataset)
-        # for k,v in dataset[0].items():
-        #     print(k, " : ", v.shape if isinstance(v,np.ndarray) else type(v))
-
-        obss = [x["obs"] for x in dataset]
-        # analyze_k_clusters(obss)
-        n_clusters = 10
-        l, c = cluster(obss, n_clusters=n_clusters, algo="kmeans", add_start=True, add_end=True)
-        # plot_clusters(obss, c)
+        
+        dataset.extend(data_collection(env_name, num_steps=5000, num_episodes=None, policy=cur_policy, frame_skip=None, num_act_apply=num_act_apply))
+        sars_dataset = SARSDataset(dataset)
+        obss = [x["obs"] for x in sars_dataset]
 
         transition_samples = []
-        for traj in extract_trajectories(dataset):
+        for traj in extract_trajectories(sars_dataset):
             # Identify states
             d_states, distances = zip(*[obs_to_cluster(x, c) for x in traj["obs"]])
 
@@ -79,6 +83,7 @@ if __name__ == "__main__":
 
         # Analyze distribution of actions (due to duplicates)
         plot_transition_graph(transition_samples)
+        plot_action_vectors(c, transition_samples)
 
         # Aggregate duplicates
         transition_map = {}
@@ -97,14 +102,15 @@ if __name__ == "__main__":
                 transition_map[k] = v[0]
 
         transition_samples_simplified = [(k[0], k[1], v) for k,v in transition_map.items()]
-        plot_transition_graph(transition_samples_simplified)
+        #plot_transition_graph(transition_samples_simplified)
+        #plot_action_vectors(c, transition_samples_simplified)
         logging.info("TRANSITION MAP")
         logging.info(transition_samples_simplified)
 
         # Identify goal state, start_state (if we don't know, use curiosity to map out more sars transitions?)
         total_reward_state_idx_map = {clust: np.array([0.0]) for clust in range(len(c))}
         start_states = []
-        for traj in extract_trajectories(dataset):
+        for traj in extract_trajectories(sars_dataset):
             d_states, distances = zip(*[obs_to_cluster(x, c) for x in traj["obs"]])
             rewards = traj["reward"]
             start_states.append(int(d_states[0]))
@@ -150,7 +156,7 @@ if __name__ == "__main__":
         # --------------------------------------------------------------------------
         print("Executing plan in environment...")
 
-        env = gym.make(env_name, gravity=-1.0, render_mode="rgb_array")
+        env = gym.make(env_name, gravity=-2.0, render_mode="rgb_array")
 
         num_trajectories_to_gen = 10
         for itr in range(num_trajectories_to_gen):
@@ -194,6 +200,7 @@ if __name__ == "__main__":
                 while not done:
                     for _ in range(num_act_apply):
                         obs, reward, terminated, truncated, info = env.step(action)
+                        env.unwrapped.lander.angle = 0
                     done = terminated or truncated
                     new_state, _ = obs_to_cluster(obs, c)
                     new_state = int(new_state)
@@ -230,7 +237,7 @@ if __name__ == "__main__":
     # EVALUATION
 
     # Test Run
-    env = gym.make(env_name, gravity=-1.0, render_mode="human")
+    env = gym.make(env_name, gravity=-2.0, render_mode="human")
     obs, info = env.reset()
     done = False
     
@@ -239,7 +246,10 @@ if __name__ == "__main__":
 
     current_state, _ = obs_to_cluster(obs, c)
     current_state = int(current_state)
-    while not done:
+    step=0
+    max_steps=500
+    while not done and step<max_steps:
+        step+=1
         plan_actions, plan_transitions, state_action_map = plan(
             transition_samples_simplified, current_state, goal_state, len(c)
         )
@@ -255,6 +265,7 @@ if __name__ == "__main__":
             action = env.action_space.sample()
         
         obs, reward, terminated, truncated, info = env.step(action)
+        env.unwrapped.lander.angle = 0
         done = terminated or truncated
         current_state, _ = obs_to_cluster(obs, c)
         current_state = int(current_state)
@@ -262,27 +273,46 @@ if __name__ == "__main__":
         test_action_list.append(action)
     env.close()
 
-    fig, ax = plt.subplots(6,1,figsize=(9,12))
+    # --- FIGURE 1: EPISODE-LEVEL METRICS ---
+    fig1, ax = plt.subplots(4, 1, figsize=(9, 12))
+
+    # Returns
     ax[0].plot(returns)
-    ax[0].set_xlabel("Episode")
-    ax[0].set_ylabel("Return")
+    ax[0].set_xlabel("Episode", fontsize=11)
+    ax[0].set_ylabel("Return", fontsize=11)
+    ax[0].set_title("Episode Returns Over Evaluation", fontsize=13)
+
+    # Plan Failures
     ax[1].plot(plan_failures)
-    ax[1].set_xlabel("Episode")
-    ax[1].set_ylabel("Plan Failures")
+    ax[1].set_xlabel("Episode", fontsize=11)
+    ax[1].set_ylabel("Plan Failures", fontsize=11)
+    ax[1].set_title("Number of Planning Failures per Episode", fontsize=13)
+
+    # Random Actions
     ax[2].plot(random_action_choices)
-    ax[2].set_xlabel("Episode")
-    ax[2].set_ylabel("Random Actions Chosen")
+    ax[2].set_xlabel("Episode", fontsize=11)
+    ax[2].set_ylabel("Random Actions", fontsize=11)
+    ax[2].set_title("Random Action Selections per Episode", fontsize=13)
+
+    # Start State = Goal State
     ax[3].plot(start_state_equals_goal_state)
-    ax[3].set_xlabel("Episode")
-    ax[3].set_ylabel("Start state == Goal state")
-    
-    ax[4].plot(test_cluster_list)
-    ax[4].set_xlabel("step")
-    ax[4].set_ylabel("cluster, in test episode")
-    
-    ax[5].plot(test_action_list)
-    ax[5].set_xlabel("step")
-    ax[5].set_ylabel("action, in test episode")
+    ax[3].set_xlabel("Episode", fontsize=11)
+    ax[3].set_ylabel("Indicator", fontsize=11)
+    ax[3].set_title("Start State Equals Goal State (Binary Indicator)", fontsize=13)
+    plt.tight_layout()
+
+    # --- FIGURE 2: TEST EPISODE STEP-LEVEL DATA ---
+    fig15, ax15 = plt.subplots(2, 1, figsize=(9, 8))
+    # Cluster trajectory during the test episode
+    ax15[0].plot(test_cluster_list)
+    ax15[0].set_xlabel("Step", fontsize=11)
+    ax15[0].set_ylabel("Cluster", fontsize=11)
+    ax15[0].set_title("Cluster Index in Test Episode Trajectory", fontsize=13)
+    # Action trajectory during the test episode
+    ax15[1].plot(test_action_list)
+    ax15[1].set_xlabel("Step", fontsize=11)
+    ax15[1].set_ylabel("Action", fontsize=11)
+    ax15[1].set_title("Action Sequence in Test Episode Trajectory", fontsize=13)
     plt.tight_layout()
 
     fig2 = plt.figure(figsize=(8, 6))
@@ -336,10 +366,9 @@ if __name__ == "__main__":
         cluster_centers[:, 2], cluster_centers[:, 3],   # direction vectors (u, v)
         angles='xy', scale_units='xy', scale=1, color='black', width=0.003
     )
+    
+    eval_policy(env_name, c, transition_samples_simplified, goal_state, num_act_apply)
+    eval_random(env_name, c, transition_samples_simplified, goal_state)
+    
     plt.legend()
-
-    print("Cluster centers size: ", cluster_centers.shape)
-
-    print("Transition Samples: \n", transition_samples_simplified)
-
     plt.show()
