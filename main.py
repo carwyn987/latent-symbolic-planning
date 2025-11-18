@@ -220,7 +220,7 @@ if __name__ == "__main__":
 
                 ######################### PID (P) LOOP LEARNER ##############################
                 def choose_act_pid(s_to_clust_center, obs):
-                    error =  s_to_clust_center[0:4] - obs[0:4]  # p,v
+                    error =  s_to_clust_center[0:2] - obs[0:2]  # p NOT,v
                     error_prob = np.exp(error) / np.sum(np.exp(error))
                     act_idx = np.random.choice(len(error_prob), p=error_prob)
                     logging.debug(f"      currently at {obs}, want to be at {s_to_clust_center}, error = {error}, choose on {act_idx}, probs: {error_prob}")
@@ -228,7 +228,7 @@ if __name__ == "__main__":
                     if act_idx == 0: # x error
                         return 1 if np.sign(error[act_idx]) > 0 else 3
                     if act_idx == 1: # y error
-                        return 0 if np.sign(error[act_idx]) > 0 else 2
+                        return 2 if np.sign(error[act_idx]) > 0 else 0
                     if act_idx == 2: # vx error
                         return 3 if np.sign(error[act_idx]) > 0 else 1 
                     if act_idx == 3: # vy error
