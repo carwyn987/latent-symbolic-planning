@@ -11,6 +11,7 @@ from typing import List, Dict, Any, Callable, Optional
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
 from functools import partial
+import copy
 
 from src.data_manipulation import stack_datapoints, \
                             data_collection, \
@@ -52,11 +53,14 @@ if __name__ == "__main__":
     num_act_apply = 20 
 
     # Collect data
+    
+    print("Collecting Data")
     env_name = "LunarLander-v3" #"Blackjack-v1" #"CliffWalking-v0"   #'Pendulum-v1' #"CarRacing-v3" # "CartPole-v1" 
-    dataset = data_collection(env_name, num_steps=25000, num_episodes=None, policy=cur_policy, frame_skip=None, num_act_apply=num_act_apply)
+    dataset = data_collection(env_name, num_steps=5000, num_episodes=None, policy=cur_policy, frame_skip=None, num_act_apply=num_act_apply)
     # dataset = stack_datapoints(dataset, 4)
     sars_dataset = SARSDataset(dataset)
     obss = [x["obs"] for x in sars_dataset]
+    print("Data Collected")
     n_clusters = 20
     l, c = cluster(obss, n_clusters=n_clusters, algo="kmeans", add_start=True, add_end=True)
     # plot_clusters(obss, c)
@@ -65,9 +69,11 @@ if __name__ == "__main__":
 
     for outer_loop_idx in range(1):
         
+        print("Collecting Data")
         dataset.extend(data_collection(env_name, num_steps=5000, num_episodes=None, policy=cur_policy, frame_skip=None, num_act_apply=num_act_apply))
         sars_dataset = SARSDataset(dataset)
         obss = [x["obs"] for x in sars_dataset]
+        print("Data Collected")
 
         transition_samples = []
         for traj in extract_trajectories(sars_dataset):
@@ -145,18 +151,16 @@ if __name__ == "__main__":
         ### TEMPORARY ####
         start_state = len(c)-2 # obs_to_cluster([0,1.5,0,0,0,0,0,0], c)
         goal_state = len(c)-1 # obs_to_cluster([0,0,0,0,0,0,0,0], c)
-        print(start_state, goal_state)
 
         # Planner
         plan_actions, plan_transitions, state_action_map = plan(transition_samples_simplified, start_state, goal_state, len(c))
-        # print("Plan actions: ", plan_actions, ", plan transitions: ", plan_transitions, ", state_action_map: ", state_action_map)
 
         # --------------------------------------------------------------------------
         # 4. Execute plan in the environment (with online replanning)
         # --------------------------------------------------------------------------
         print("Executing plan in environment...")
 
-        env = gym.make(env_name, gravity=-2.0, render_mode="rgb_array")
+        env = gym.make(env_name, gravity=-4.0, render_mode="human")
 
         num_trajectories_to_gen = 10
         for itr in range(num_trajectories_to_gen):
@@ -171,51 +175,68 @@ if __name__ == "__main__":
             sa_sequence = []
 
             returns.append(0.0)
+            
+            # Plan from current cluster to goal
+            plan_actions, plan_transitions, state_action_map = plan(
+                transition_samples_simplified, current_state, goal_state, len(c)
+            )
+
+            if not plan_transitions:
+                print(f"No plan found from s{current_state} to s{goal_state}. Skipping.")
+                plan_failures[-1] += 1
+                continue
 
             print(f"Starting execution from cluster s{current_state}, goal cluster s{goal_state}")
 
-            while not done:# and current_state != goal_state:
-
-                # Plan from current cluster to goal
-                plan_actions, plan_transitions, state_action_map = plan(
-                    transition_samples_simplified, current_state, goal_state, len(c)
-                )
-
-                if not plan_transitions:
-                    print(f"No plan found from s{current_state} to s{goal_state}. Stopping.")
-                    plan_failures[-1] += 1
-                    break
-
+            # Steps in episode
+            cur_state_save = copy.copy(current_state)
+            while not done:
+                
                 # Get the first step of the plan
                 s_from, s_to = plan_transitions[0]
-                action = state_action_map.get((s_from, s_to))
-                if action is None:
-                    # print(f"No known action for transition s{s_from}→s{s_to}. Sampling random action.")
-                    action = env.action_space.sample()
-                    random_action_choices[-1] += 1
+                
+                if current_state != cur_state_save and current_state != s_to:
+                    plan_actions, plan_transitions, state_action_map = plan(
+                        transition_samples_simplified, current_state, goal_state, len(c)
+                    )
 
-                # print(f"Executing transition s{s_from}→s{s_to} with action {action}")
+                    if not plan_transitions:
+                        print(f"No plan found from s{current_state} to s{goal_state}. Skipping.")
+                        plan_failures[-1] += 1
+                        continue
+                elif current_state != cur_state_save and current_state == s_to:
+                    plan_transitions.pop(0)
+                    s_from, s_to = plan_transitions[0]
 
-                # Execute until new cluster reached or episode ends
-                while not done:
-                    for _ in range(num_act_apply):
-                        obs, reward, terminated, truncated, info = env.step(action)
-                        env.unwrapped.lander.angle = 0
-                    done = terminated or truncated
-                    new_state, _ = obs_to_cluster(obs, c)
-                    new_state = int(new_state)
-                    returns[-1] += reward
+                ######################### PID (P) LOOP LEARNER ##############################
+                def choose_act_pid(s_to_clust_center, obs):
+                    error =  s_to_clust_center[0:4] - obs[0:4]  # p,v
+                    error_prob = np.exp(error) / np.sum(np.exp(error))
+                    act_idx = np.random.choice(len(error_prob), p=error_prob)
+                    
+                    if act_idx == 0: # x error
+                        return 1 if np.sign(error[act_idx]) > 0 else 3
+                    if act_idx == 1: # y error
+                        return 0 if np.sign(error[act_idx]) > 0 else 2
+                    if act_idx == 2: # vx error
+                        return 3 if np.sign(error[act_idx]) > 0 else 1 
+                    if act_idx == 3: # vy error
+                        return 2 if np.sign(error[act_idx]) > 0 else 0
+                
+                s_to_clust_center = c[s_to]
+                action = choose_act_pid(s_to_clust_center, obs)
+                #action = env.action_space.sample()
+                #########################################################################
 
-                    # Log executed (state, action) pair
-                    sa_sequence.append((current_state, action))
+                obs, reward, terminated, truncated, info = env.step(action)
+                env.unwrapped.lander.angle = 0
+                
+                done = terminated or truncated
+                current_state = int(obs_to_cluster(obs, c)[0])
+                returns[-1] += reward
 
-                    if new_state != current_state:
-                        # print(f"Cluster change detected: s{current_state} → s{new_state}")
-                        current_state = new_state
-                        break
-
-                    if done:
-                        break
+                # Log executed (state, action) pair
+                sa_sequence.append((current_state, action))
 
                 if done:
                     print("Episode ended early.")
@@ -227,17 +248,15 @@ if __name__ == "__main__":
             else:
                 print("️Plan execution stopped before reaching goal.")
 
-            # print("Executed (state, action) sequence:")
-            # for (s, a) in sa_sequence:
-            #     print(f"  (s{s}, {a})")
-
     env.close()
     cur_policy = partial(policy, state_action_map, c)
 
+    #########################################################################
     # EVALUATION
+    #########################################################################
 
     # Test Run
-    env = gym.make(env_name, gravity=-2.0, render_mode="human")
+    env = gym.make(env_name, gravity=-4.0, render_mode="human")
     obs, info = env.reset()
     done = False
     

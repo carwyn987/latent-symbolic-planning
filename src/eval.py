@@ -21,7 +21,7 @@ def did_succeed(env, obs):
 
 def eval_policy(env_name, c, transition_samples_simplified, goal_state, num_act_apply):
     # Test Run
-    env = gym.make(env_name, gravity=-2.0, render_mode="rgb_array")
+    env = gym.make(env_name, gravity=-4.0, render_mode="rgb_array")
     
     num_epochs = 30
     max_steps = 500
@@ -66,7 +66,7 @@ def eval_policy(env_name, c, transition_samples_simplified, goal_state, num_act_
 
 def eval_random(env_name, c, transition_samples_simplified, goal_state):
     # Test Run
-    env = gym.make(env_name, gravity=-2.0, render_mode="rgb_array")
+    env = gym.make(env_name, gravity=-4.0, render_mode="rgb_array")
     
     num_epochs = 100
     max_steps = 500
@@ -99,7 +99,7 @@ def eval_random(env_name, c, transition_samples_simplified, goal_state):
 
 def eval_random(env_name, c, transition_samples_simplified, goal_state):
     # Test Run
-    env = gym.make(env_name, gravity=-1.0, render_mode="rgb_array")
+    env = gym.make(env_name, gravity=-4.0, render_mode="rgb_array")
     
     num_epochs = 30
     max_steps = 1000

@@ -59,7 +59,7 @@ def data_collection(
     list of dict
         Collected transitions containing 'prior_obs', 'action', 'reward', 'obs', 'done', 'episode', 'timestep'.
     """
-    env = gym.make(env_name, gravity=-2.0, render_mode="rgb_array")
+    env = gym.make(env_name, gravity=-4.0, render_mode="rgb_array")
     obs, info = env.reset()
     
     # Set up dataloader
