@@ -34,7 +34,7 @@ if __name__ == "__main__":
     # Setup logger
     logging.basicConfig(
         filename='logs/app.log',
-        filemode='a',  # append mode
+        filemode='w',
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s"
     )
@@ -69,11 +69,12 @@ if __name__ == "__main__":
 
     for outer_loop_idx in range(1):
         
-        print("Collecting Data")
-        dataset.extend(data_collection(env_name, num_steps=5000, num_episodes=None, policy=cur_policy, frame_skip=None, num_act_apply=num_act_apply))
-        sars_dataset = SARSDataset(dataset)
-        obss = [x["obs"] for x in sars_dataset]
-        print("Data Collected")
+        if outer_loop_idx != 0:
+            print("Collecting Data")
+            dataset.extend(data_collection(env_name, num_steps=5000, num_episodes=None, policy=cur_policy, frame_skip=None, num_act_apply=num_act_apply))
+            sars_dataset = SARSDataset(dataset)
+            obss = [x["obs"] for x in sars_dataset]
+            print("Data Collected")
 
         transition_samples = []
         for traj in extract_trajectories(sars_dataset):
@@ -159,11 +160,13 @@ if __name__ == "__main__":
         # 4. Execute plan in the environment (with online replanning)
         # --------------------------------------------------------------------------
         print("Executing plan in environment...")
+        logging.info("EXECUTING")
+        env = gym.make(env_name, gravity=-4.0, render_mode="rgb_array")
+        env = gym.wrappers.RecordVideo(env, video_folder="logs/")
 
-        env = gym.make(env_name, gravity=-4.0, render_mode="human")
-
-        num_trajectories_to_gen = 10
+        num_trajectories_to_gen = 1
         for itr in range(num_trajectories_to_gen):
+            logging.info(f"Train Trajectory #{itr}")
             plan_failures.append(0)
             random_action_choices.append(0)
 
@@ -180,6 +183,7 @@ if __name__ == "__main__":
             plan_actions, plan_transitions, state_action_map = plan(
                 transition_samples_simplified, current_state, goal_state, len(c)
             )
+            logging.info(f"   Original Plan Actions: {plan_actions}")
 
             if not plan_transitions:
                 print(f"No plan found from s{current_state} to s{goal_state}. Skipping.")
@@ -190,7 +194,10 @@ if __name__ == "__main__":
 
             # Steps in episode
             cur_state_save = copy.copy(current_state)
-            while not done:
+            step = 0
+            max_steps = 1200
+            while not done and step < max_steps:
+                step += 1
                 
                 # Get the first step of the plan
                 s_from, s_to = plan_transitions[0]
@@ -199,20 +206,24 @@ if __name__ == "__main__":
                     plan_actions, plan_transitions, state_action_map = plan(
                         transition_samples_simplified, current_state, goal_state, len(c)
                     )
+                    logging.info(f"   new plan: {plan_actions}")
 
                     if not plan_transitions:
                         print(f"No plan found from s{current_state} to s{goal_state}. Skipping.")
                         plan_failures[-1] += 1
                         continue
+                    logging.info(f"   failed to move to {s_to}, moved to {current_state} instead.")
                 elif current_state != cur_state_save and current_state == s_to:
                     plan_transitions.pop(0)
                     s_from, s_to = plan_transitions[0]
+                    logging.info(f"   successfully moved to {s_to}")
 
                 ######################### PID (P) LOOP LEARNER ##############################
                 def choose_act_pid(s_to_clust_center, obs):
                     error =  s_to_clust_center[0:4] - obs[0:4]  # p,v
                     error_prob = np.exp(error) / np.sum(np.exp(error))
                     act_idx = np.random.choice(len(error_prob), p=error_prob)
+                    logging.debug(f"      currently at {obs}, want to be at {s_to_clust_center}, error = {error}, choose on {act_idx}, probs: {error_prob}")
                     
                     if act_idx == 0: # x error
                         return 1 if np.sign(error[act_idx]) > 0 else 3
@@ -225,9 +236,11 @@ if __name__ == "__main__":
                 
                 s_to_clust_center = c[s_to]
                 action = choose_act_pid(s_to_clust_center, obs)
+                logging.info(f"      Choosing action {action}")
                 #action = env.action_space.sample()
                 #########################################################################
 
+                cur_state_save = int(obs_to_cluster(obs, c)[0])
                 obs, reward, terminated, truncated, info = env.step(action)
                 env.unwrapped.lander.angle = 0
                 
@@ -250,6 +263,7 @@ if __name__ == "__main__":
 
     env.close()
     cur_policy = partial(policy, state_action_map, c)
+    breakpoint()
 
     #########################################################################
     # EVALUATION

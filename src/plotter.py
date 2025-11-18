@@ -84,6 +84,7 @@ def plot_transition_graph(transition_samples):
     plt.title("Directed State Transition Graph (Separate Direction Counts)")
     plt.axis("off")
     plt.tight_layout()
+    plt.savefig("logs/transition_graph.png")
     #plt.show()
 
 
@@ -154,4 +155,5 @@ def plot_action_vectors(cluster_centers, transition_samples, scale=1.0):
     plt.grid(alpha=0.3)
     plt.axis("equal")
     plt.tight_layout()
+    plt.savefig("logs/action_vector_graph.png")
     # plt.show()
