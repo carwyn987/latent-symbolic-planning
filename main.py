@@ -28,6 +28,7 @@ from src.plotter import plot_transition_graph, \
 from src.planner import plan, policy
 from src.eval import eval_random, \
                      eval_policy
+from src.pid import *
 
 if __name__ == "__main__":
 
@@ -183,6 +184,7 @@ if __name__ == "__main__":
             plan_actions, plan_transitions, state_action_map = plan(
                 transition_samples_simplified, current_state, goal_state, len(c)
             )
+            saved_plan_actions = copy.copy(plan_actions)
             logging.info(f"   Original Plan Actions: {plan_actions}")
 
             if not plan_transitions:
@@ -192,50 +194,67 @@ if __name__ == "__main__":
 
             print(f"Starting execution from cluster s{current_state}, goal cluster s{goal_state}")
 
+            pidc_x = PIDController(0.01, 0.0, 0.0)
+            pidc_y = PIDController(0.01, 0.0, 0.4)
             # Steps in episode
             cur_state_save = copy.copy(current_state)
             step = 0
-            max_steps = 1200
+            max_steps = 2500
             while not done and step < max_steps:
                 step += 1
+                if step == max_steps:
+                    logging.info(f"Steps hit max_steps ... exiting")
                 
                 # Get the first step of the plan
                 s_from, s_to = plan_transitions[0]
                 
                 if current_state != cur_state_save and current_state != s_to:
-                    plan_actions, plan_transitions, state_action_map = plan(
-                        transition_samples_simplified, current_state, goal_state, len(c)
-                    )
+                    full_replan = True
+                    if full_replan:
+                        plan_actions, plan_transitions, state_action_map = plan(
+                            transition_samples_simplified, current_state, goal_state, len(c)
+                        )
+                    else:
+                        pass
+                    logging.info(f"   failed to move to {s_to}, moved to {current_state} instead.")
                     logging.info(f"   new plan: {plan_actions}")
 
                     if not plan_transitions:
                         print(f"No plan found from s{current_state} to s{goal_state}. Skipping.")
                         plan_failures[-1] += 1
                         continue
-                    logging.info(f"   failed to move to {s_to}, moved to {current_state} instead.")
+                    
+                    pidc_x.reset()
+                    pidc_y.reset()
                 elif current_state != cur_state_save and current_state == s_to:
                     plan_transitions.pop(0)
+                    if len(plan_transitions) == 0:
+                        logging.info("Ran out of plan transitions, exiting... early exiting")
+                        break
                     s_from, s_to = plan_transitions[0]
                     logging.info(f"   successfully moved to {s_to}")
+                    pidc_x.reset()
+                    pidc_y.reset()
 
                 ######################### PID (P) LOOP LEARNER ##############################
-                def choose_act_pid(s_to_clust_center, obs):
-                    error =  s_to_clust_center[0:2] - obs[0:2]  # p NOT,v
-                    error_prob = np.exp(error) / np.sum(np.exp(error))
-                    act_idx = np.random.choice(len(error_prob), p=error_prob)
-                    logging.debug(f"      currently at {obs}, want to be at {s_to_clust_center}, error = {error}, choose on {act_idx}, probs: {error_prob}")
+                def choose_act_pid(s_to_clust_center, obs, pidc_x, pidc_y):
+                    pidc_x.set_target(s_to_clust_center[0])
+                    pidc_y.set_target(s_to_clust_center[1])
+                    move_x = pidc_x.update(obs[0])
+                    move_y = 5 * pidc_y.update(obs[1])
+                    logits = np.array([abs(move_x), abs(move_y)])
+                    #act_probs = np.exp(logits) / np.sum(np.exp(logits))
+                    act_probs = logits / np.sum(logits)
+                    act_idx = np.random.choice(len(act_probs), p=act_probs)
+                    logging.info(f"      currently at {obs[0:4]}, want to be at {s_to_clust_center[0:4]}, logits = {logits}, choose on {act_idx}, probs: {act_probs}")
                     
                     if act_idx == 0: # x error
-                        return 1 if np.sign(error[act_idx]) > 0 else 3
+                        return 3 if move_x > 0 else 1
                     if act_idx == 1: # y error
-                        return 2 if np.sign(error[act_idx]) > 0 else 0
-                    if act_idx == 2: # vx error
-                        return 3 if np.sign(error[act_idx]) > 0 else 1 
-                    if act_idx == 3: # vy error
-                        return 2 if np.sign(error[act_idx]) > 0 else 0
+                        return 2 if move_y > 0 else 0
                 
                 s_to_clust_center = c[s_to]
-                action = choose_act_pid(s_to_clust_center, obs)
+                action = choose_act_pid(s_to_clust_center, obs, pidc_x, pidc_y)
                 logging.info(f"      Choosing action {action}")
                 #action = env.action_space.sample()
                 #########################################################################
@@ -243,6 +262,8 @@ if __name__ == "__main__":
                 cur_state_save = int(obs_to_cluster(obs, c)[0])
                 obs, reward, terminated, truncated, info = env.step(action)
                 env.unwrapped.lander.angle = 0
+                env.unwrapped.legs[0].angle = 0
+                env.unwrapped.legs[1].angle = 0
                 
                 done = terminated or truncated
                 current_state = int(obs_to_cluster(obs, c)[0])
