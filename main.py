@@ -1,12 +1,11 @@
+import os
 import logging
 import argparse
 import numpy as np
-import networkx as nx
 import matplotlib.pyplot as plt
 import gymnasium as gym
 from collections import Counter
 from typing import List, Dict, Any, Callable, Optional
-from sklearn.model_selection import train_test_split
 
 from src.data_manipulation import data_collection, \
                             SARSDataset, \
@@ -17,11 +16,11 @@ from src.cluster import cluster, \
                     plot_clusters
 from src.plotter import plot_transition_graph, \
                         plot_action_vectors
-from src.planner import plan
 from src.eval import eval_random, \
                      eval_policy, \
-                     plot_descriptive_states
-from src.env import get_env
+                     plot_descriptive_states, \
+                     show_sample_execution 
+
 
 if __name__ == "__main__":
 
@@ -41,8 +40,13 @@ if __name__ == "__main__":
     parser.add_argument("-m", "--clustering_method", default="kmeans", required=False, type=str, help="Clustering method.")
     parser.add_argument("-a", "--num_act_apply", default=20, required=False, type=int, help="Number of actions to apply consecutively during data collection. May help increase exploration.")
     parser.add_argument("-g", "--hardcode_start_goal_states", default=True, required=False, type=bool, help="Whether or not to hardcode the start and goal states to known values, rather than determining them from rollouts.")
-    parser.add_argument("-e", "--env_name", default="LunarLander-v3", choices={"LunarLander-v3"}, required=False, type=str, help="Gymnasium environment name. Currently constrained to Lunar-Lander-v3.")
+    parser.add_argument("-f", "--full_replan", default=True, required=False, type=bool, help="Whether to fully replan or to correct course back onto original plan.")
+    parser.add_argument("-o", "--output", default="logs", required=False, type=str, help="Directory to output metrics.")
     args = parser.parse_args()
+    args.env_name = "LunarLander-v3"
+    
+    # Create output directory
+    os.makedirs(args.output, exist_ok=True)
     
     # DEBUG
     final_states = []
@@ -59,16 +63,16 @@ if __name__ == "__main__":
     
     # Cluster data
     n_clusters = args.num_clusters
-    l, c = cluster(obss, n_clusters=n_clusters, algo="kmeans", add_start=True, add_end=True)
+    l, cluster_centers = cluster(obss, n_clusters=n_clusters, algo="kmeans", add_start=True, add_end=True)
     if args.debug >= 2:
-        plot_clusters(obss, c)
+        plot_clusters(obss, cluster_centers)
         analyze_k_clusters(obss)
 
     # Compute transition model
     transition_samples = []
     for traj in extract_trajectories(sars_dataset):
         # Identify states
-        d_states, distances = zip(*[obs_to_cluster(x, c) for x in traj["obs"]])
+        d_states, distances = zip(*[obs_to_cluster(x, cluster_centers) for x in traj["obs"]])
 
         final_states.append(traj["obs"][-1])
 
@@ -102,10 +106,10 @@ if __name__ == "__main__":
     logging.info(f"Transition map: {transition_samples_simplified}")
 
     # Identify goal state, start_state (if we don't know, use curiosity to map out more sars transitions?)
-    total_reward_state_idx_map = {clust: np.array([0.0]) for clust in range(len(c))}
+    total_reward_state_idx_map = {clust: np.array([0.0]) for clust in range(len(cluster_centers))}
     start_states = []
     for traj in extract_trajectories(sars_dataset):
-        d_states, distances = zip(*[obs_to_cluster(x, c) for x in traj["obs"]])
+        d_states, distances = zip(*[obs_to_cluster(x, cluster_centers) for x in traj["obs"]])
         rewards = traj["reward"]
         start_states.append(int(d_states[0]))
 
@@ -114,13 +118,13 @@ if __name__ == "__main__":
         last_state = d_states[-1]
         total_reward_state_idx_map[d_states[-1]] += return_ # TODO: Make mean, so I can fix my -99999 below
 
-    total_reward_state_idx_arr = np.concatenate([total_reward_state_idx_map[i] for i in range(len(c))])
+    total_reward_state_idx_arr = np.concatenate([total_reward_state_idx_map[i] for i in range(len(cluster_centers))])
     # Mask zeroes (no data) - TODO: TASK-SPECIFIC-ASSUMPTION
     total_reward_state_idx_arr = np.where(total_reward_state_idx_arr == 0,
                                         -99999999,
                                         total_reward_state_idx_arr)
     goal_state = np.argmax(total_reward_state_idx_arr)
-    goal_states.append(c[goal_state])
+    goal_states.append(cluster_centers[goal_state])
 
     start_state_counts = Counter(start_states)
     start_state, count = start_state_counts.most_common(1)[0]
@@ -133,25 +137,22 @@ if __name__ == "__main__":
     start_states_save.append(start_state)
     
     ### TEMPORARY ####
-    start_state = len(c)-2 # obs_to_cluster([0,1.5,0,0,0,0,0,0], c)
-    goal_state = len(c)-1 # obs_to_cluster([0,0,0,0,0,0,0,0], c)
+    start_state = len(cluster_centers)-2 # obs_to_cluster([0,1.5,0,0,0,0,0,0], c)
+    goal_state = len(cluster_centers)-1 # obs_to_cluster([0,0,0,0,0,0,0,0], c)
 
-    # Planner
-    plan_actions, plan_transitions, state_action_map = plan(transition_samples_simplified, start_state, goal_state, len(c))
-
-    print("Executing plan in environment...")
-    logging.info("EXECUTING")
-    env = get_env(args.env_name)
-    if args.debug >=2:
-        env = gym.wrappers.RecordVideo(env, video_folder="logs/")
-        
+       
     #########################################################################
     # EVALUATION
     #########################################################################
-    plot_descriptive_states(obss, start_states_save, goal_states, final_states, cluster_centers=c)
+    plot_descriptive_states(obss, start_states_save, goal_states, final_states, cluster_centers=cluster_centers)
   
-    eval_policy(args.env_name, c, transition_samples_simplified, goal_state, args.num_act_apply) # Has to come first, b/c planner spits out so much content
-    eval_random(args.env_name, c, transition_samples_simplified, goal_state)
+    # Test execution for qualitative result analysis
+    if args.debug > 0:
+        show_sample_execution(args, cluster_centers, transition_samples_simplified, start_state, goal_state)
+        
+    eval_policy(args, cluster_centers, transition_samples_simplified, goal_state) # Should come first, b/c planner spits out so much content
+    eval_random(args)
     
     plt.legend()
-    plt.show()
+    if args.debug > 0:
+        plt.show()

@@ -1,8 +1,12 @@
 import subprocess
 import json, os
-from src.pddl_convert import write_ppddl_files
 import re
+import numpy as np
+import logging
+
+from src.pddl_convert import write_ppddl_files
 from src.cluster import obs_to_cluster
+from src.pid import PIDController
                         
 def plan(transitions, start_state, goal_state, num_states):
     
@@ -82,10 +86,155 @@ def plan(transitions, start_state, goal_state, num_states):
     print("##############################################\nFINISHED RUNNING PLANNER\n")
     return plan_actions, plan_transitions, state_action_map
 
-def policy(state_action_map, cluster_centers, state):
-    obs_cluster = obs_to_cluster(state, cluster_centers)
-    if obs_cluster in state_action_map.keys():
-        assert isinstance(state_action_map[obs_cluster], int)
-        return state_action_map[obs_cluster]
-    else:
-        return None
+class Policy:
+    """
+    Policy class
+    """
+    def __init__(self, args, cluster_centers, transition_samples, start_state, goal_state):
+        self.args = args
+        
+        self.pidc_x = PIDController(0.01, 0.0, 0.0)
+        self.pidc_y = PIDController(0.01, 0.0, 0.4)
+        
+        self.cluster_centers = cluster_centers
+        self.transition_samples = transition_samples
+        self.start_state = int(start_state)
+        self.goal_state = int(goal_state)
+        
+        # Initial plan from start to goal
+        self.cur_plan, self.plan_transitions, _ = plan(
+            self.transition_samples, self.start_state, self.goal_state, len(self.cluster_centers)
+        )
+        
+        self.prev_state = self.start_state
+
+    def reset(self, start_state=None, goal_state=None):
+        """
+        Reset internal state and optionally update start/goal.
+        Call this at the beginning of each new episode.
+        """
+        self.pidc_x.reset()
+        self.pidc_y.reset()
+        
+        if start_state is not None:
+            self.start_state = int(start_state)
+        if goal_state is not None:
+            self.goal_state = int(goal_state)
+        
+        self.cur_plan, self.plan_transitions, _ = plan(
+            self.transition_samples, self.start_state, self.goal_state, len(self.cluster_centers)
+        )
+        self.prev_state = self.start_state
+
+    def _choose_pid_action(self, s_to_clust_center, obs):
+        """
+        PID-based action selection towards the target cluster center.
+        Mirrors the logic used in eval_policy.
+        """
+        self.pidc_x.set_target(s_to_clust_center[0])
+        self.pidc_y.set_target(s_to_clust_center[1])
+        
+        move_x = self.pidc_x.update(obs[0])
+        move_y = 5 * self.pidc_y.update(obs[1])
+        
+        logits = np.array([abs(move_x), abs(move_y)])
+        
+        # Fallback in degenerate case
+        if np.sum(logits) == 0:
+            return 0
+        
+        act_probs = logits / np.sum(logits)
+        act_idx = np.random.choice(len(act_probs), p=act_probs)
+        
+        if self.args.debug >= 2:
+            logging.info(
+                f"      currently at {obs[0:4]}, want to be at {s_to_clust_center[0:4]}, "
+                f"logits = {logits}, choose on {act_idx}, probs: {act_probs}"
+            )
+        
+        if act_idx == 0:  # x error
+            return 3 if move_x > 0 else 1
+        if act_idx == 1:  # y error
+            return 2 if move_y > 0 else 0
+        
+        return 0
+
+    def choose_action(self, obs):
+        """
+        Given the current observation, choose an action according to the
+        current plan and PID controller, with optional correction/replanning.
+        """
+        if not self.plan_transitions:
+            # No plan available; do nothing
+            logging.error("No remaining plan transitions in Policy. Returning no-op action.")
+            return 0
+        
+        current_state, _ = obs_to_cluster(obs, self.cluster_centers)
+        current_state = int(current_state)
+        
+        s_from, s_to = self.plan_transitions[0]
+        
+        # Detect that we actually moved to a different cluster
+        if current_state != self.prev_state:
+            # Case 1: we arrived at the expected next state
+            if current_state == s_to:
+                logging.info(f"   successfully moved to {s_to}")
+                self.plan_transitions.pop(0)
+                
+                self.pidc_x.reset()
+                self.pidc_y.reset()
+                
+                if not self.plan_transitions:
+                    # Plan is finished; do nothing
+                    logging.info("Plan finished inside Policy. Returning no-op action.")
+                    self.prev_state = current_state
+                    return 0
+                
+                # Update to new first transition
+                s_from, s_to = self.plan_transitions[0]
+            
+            # Case 2: deviated from the plan (not s_from, not s_to)
+            elif current_state != s_from:
+                logging.info(
+                    f"   deviated from plan: expected ({s_from}->{s_to}), "
+                    f"but at {current_state} instead."
+                )
+                
+                # Decide replanning target
+                if not self.args.full_replan:
+                    # Replan back to the next planned state
+                    replan_target = s_to
+                    logging.info(f"   full_replan=False, replanning from {current_state} to {replan_target}")
+                else:
+                    # Replan directly to the goal
+                    replan_target = self.goal_state
+                    logging.info(f"   full_replan=True, replanning from {current_state} to goal {replan_target}")
+                
+                _, new_transitions, _ = plan(
+                    self.transition_samples, current_state, replan_target, len(self.cluster_centers)
+                )
+                
+                if not new_transitions:
+                    logging.error(
+                        f"   Replanning failed from {current_state} to {replan_target}. "
+                        f"Returning no-op action."
+                    )
+                    self.plan_transitions = []
+                    self.prev_state = current_state
+                    return 0
+                
+                self.plan_transitions = new_transitions
+                s_from, s_to = self.plan_transitions[0]
+                
+                self.pidc_x.reset()
+                self.pidc_y.reset()
+        
+        # Now follow the plan towards s_to using PID
+        s_to_clust_center = self.cluster_centers[s_to]
+        action = self._choose_pid_action(s_to_clust_center, obs)
+        
+        if self.args.debug >= 2:
+            logging.info(f"      Choosing action {action} (state {current_state}, target s{s_to})")
+        
+        self.prev_state = current_state
+        return action

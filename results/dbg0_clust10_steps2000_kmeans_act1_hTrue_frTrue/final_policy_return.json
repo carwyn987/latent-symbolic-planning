@@ -1,0 +1,18 @@
+{
+  "policy_name": "final_policy",
+  "num_clusters": 10,
+  "num_steps": 2000,
+  "clustering_method": "kmeans",
+  "num_act_apply": 1,
+  "hardcode_start_goal_states": true,
+  "full_replan": true,
+  "title": "Returns",
+  "metric": "return",
+  "mean": -233.21857245486086,
+  "median": -239.91532994367867,
+  "std_dev": 41.65478449538705,
+  "min": -299.3592911048984,
+  "percentile_25": -266.94056233008325,
+  "percentile_75": -203.9863525634441,
+  "max": -155.9903146921036
+}

@@ -1,0 +1,18 @@
+{
+  "policy_name": "random_policy",
+  "num_clusters": 10,
+  "num_steps": 2000,
+  "clustering_method": "kmeans",
+  "num_act_apply": 1,
+  "hardcode_start_goal_states": true,
+  "full_replan": true,
+  "title": "Steps",
+  "metric": "steps",
+  "mean": 405.4,
+  "median": 274.5,
+  "std_dev": 320.7789062059204,
+  "min": 98.0,
+  "percentile_25": 165.0,
+  "percentile_75": 508.5,
+  "max": 1000.0
+}
