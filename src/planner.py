@@ -67,10 +67,6 @@ def plan(transitions, start_state, goal_state, num_states):
     else:
         raise ValueError("Invalid Safe-Planner JSON structure. Could not find 'main.list' or 'actions' keys.")
 
-    # print(f"Plan contains {len(plan_actions)} actions:")
-    # for a in plan_actions:
-    #     print(" ", a)
-    
     # --------------------------------------------------------------------------
     # 3. Build state→action mapping from learned transitions
     # --------------------------------------------------------------------------

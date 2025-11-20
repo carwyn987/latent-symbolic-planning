@@ -60,20 +60,3 @@ def write_ppddl_files(
     print(f"✅ PPDDL files written to: {output_dir}")
     print(f" - Domain: {domain_file}")
     print(f" - Problem: {problem_file}")
-    
-    
-    
-# if __name__ == "__main__":
-#     from collections import Counter
-#     import numpy as np
-
-#     # Assume you've already run the clustering & trajectory extraction pipeline
-#     # and now have:
-#     # transition_samples_simplified, start_state, goal_state, len(c)
-
-#     write_ppddl_files(
-#         transitions=transition_samples_simplified,
-#         num_states=len(c),
-#         start_state=start_state,
-#         goal_state=goal_state
-#     )

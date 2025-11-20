@@ -11,24 +11,15 @@ class PIDController:
         self.dt = 1.0
 
     def update(self, current_value):
-
         error = self.target - current_value
-
-        # Proportional term
+        
         P_term = self.Kp * error
-
-        # Integral term
         self.integral += error * self.dt
         I_term = self.Ki * self.integral
-
-        # Derivative term
         derivative = (error - self.last_error) / self.dt if self.dt > 0 else 0
         D_term = self.Kd * derivative
-
-        # Calculate control output
         output = P_term + I_term + D_term
-
-        # Update for next iteration
+        
         self.last_error = error
 
         return output
