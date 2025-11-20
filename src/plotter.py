@@ -90,7 +90,7 @@ def plot_transition_graph(transition_samples):
 
 
 
-def plot_action_vectors(cluster_centers, transition_samples, scale=1.0):
+def plot_action_vectors(cluster_centers, transition_samples, scale=1.0, arrows=True):
     """
     Plot cluster centers in 2D and, for each (state, action),
     draw the average transition vector across all s --a--> s'.
@@ -147,7 +147,7 @@ def plot_action_vectors(cluster_centers, transition_samples, scale=1.0):
         mx = (start[0] + end[0]) / 2
         my = (start[1] + end[1]) / 2
         plt.text(mx, my, f"a={a}\n(n={count_dict[(s,a)]})",
-                 fontsize=8, color="darkred")
+                fontsize=8, color="darkred")
 
     plt.title("Average Action-Conditioned Transition Vectors per Cluster")
     plt.xlabel("x")
@@ -155,5 +155,5 @@ def plot_action_vectors(cluster_centers, transition_samples, scale=1.0):
     plt.grid(alpha=0.3)
     plt.axis("equal")
     plt.tight_layout()
-    plt.savefig("logs/action_vector_graph.png")
+    plt.savefig(f"logs/action_vector_graph_{str(arrows)}.png")
     # plt.show()

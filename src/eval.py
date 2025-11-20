@@ -32,47 +32,53 @@ def eval_policy(args, cluster_centers, transition_samples_simplified, goal_state
     successes = []
     steps = []
 
-    for _ in range(30):
-        env = get_env(args.env_name)
-        if args.debug >= 2:
-            env = gym.wrappers.RecordVideo(env, video_folder="logs/")
+    for traj_idx in range(30):
+        with open(os.path.join("logs", f"traj_log_{traj_idx}.txt"), "w") as f:
+            f.write(f"cluster_centers={str([(i,[float(cluster_centers[i][0]), float(cluster_centers[i][1])]) for i in range(len(cluster_centers))])}\n")
+            env = get_env(args.env_name)
+            if args.debug >= 1:
+                env = gym.wrappers.RecordVideo(env, video_folder="logs/", name_prefix=f"run_{traj_idx}")
 
-        obs, _ = env.reset()
-        start_state, _ = obs_to_cluster(obs, cluster_centers)
-        start_state = int(start_state)
+            obs, _ = env.reset()
+            start_state, _ = obs_to_cluster(obs, cluster_centers)
+            start_state = int(start_state)
 
-        policy = Policy(
-            args=args,
-            cluster_centers=cluster_centers,
-            transition_samples=transition_samples_simplified,
-            start_state=start_state,
-            goal_state=goal_state
-        )
+            policy = Policy(
+                args=args,
+                cluster_centers=cluster_centers,
+                transition_samples=transition_samples_simplified,
+                start_state=start_state,
+                goal_state=goal_state
+            )
 
-        done = False
-        _return = 0
-        step = 0
+            done = False
+            _return = 0
+            step = 0
 
-        while not done:
-            step += 1
-            action = policy.choose_action(obs)
-            obs, reward, terminated, truncated, _ = env.step(action)
-            done = terminated or truncated
+            while not done:
+                f.write(f"STEP {step}\n")
+                step += 1
+                action = policy.choose_action(obs)
+                f.write(f"   current_pos={str(obs[0:2])}\n")
+                f.write(f"   cluster={str(int(obs_to_cluster(obs, cluster_centers)[0]))}\n")
+                f.write(f"   plan={str(policy.replan_prepend + policy.plan_transitions)}\n")
+                obs, reward, terminated, truncated, _ = env.step(action)
+                done = terminated or truncated
 
-            env.unwrapped.lander.angle = 0
-            env.unwrapped.legs[0].angle = 0
-            env.unwrapped.legs[1].angle = 0
+                env.unwrapped.lander.angle = 0
+                env.unwrapped.legs[0].angle = 0
+                env.unwrapped.legs[1].angle = 0
 
-            _return += reward
+                _return += reward
 
-        current_state, _ = obs_to_cluster(obs, cluster_centers)
-        current_state = int(current_state)
+            current_state, _ = obs_to_cluster(obs, cluster_centers)
+            current_state = int(current_state)
 
-        returns.append(_return)
-        successes.append(did_succeed(env, obs))
-        steps.append(step)
+            returns.append(_return)
+            successes.append(did_succeed(env, obs))
+            steps.append(step)
 
-        env.close()
+            env.close()
 
     plot_eval_results(args, returns, successes, steps, "final_policy")
 

@@ -102,9 +102,10 @@ class Policy:
         self.goal_state = int(goal_state)
         
         # Initial plan from start to goal
-        self.cur_plan, self.plan_transitions, _ = plan(
+        _, self.plan_transitions, _ = plan(
             self.transition_samples, self.start_state, self.goal_state, len(self.cluster_centers)
         )
+        self.replan_prepend = []
         
         self.prev_state = self.start_state
 
@@ -121,9 +122,10 @@ class Policy:
         if goal_state is not None:
             self.goal_state = int(goal_state)
         
-        self.cur_plan, self.plan_transitions, _ = plan(
+        _, self.plan_transitions, _ = plan(
             self.transition_samples, self.start_state, self.goal_state, len(self.cluster_centers)
         )
+        self.replan_prepend = []
         self.prev_state = self.start_state
 
     def _choose_pid_action(self, s_to_clust_center, obs):
@@ -164,7 +166,7 @@ class Policy:
         Given the current observation, choose an action according to the
         current plan and PID controller, with optional correction/replanning.
         """
-        if not self.plan_transitions:
+        if not self.replan_prepend + self.plan_transitions:
             # No plan available; do nothing
             logging.error("No remaining plan transitions in Policy. Returning no-op action.")
             return 0
@@ -172,26 +174,29 @@ class Policy:
         current_state, _ = obs_to_cluster(obs, self.cluster_centers)
         current_state = int(current_state)
         
-        s_from, s_to = self.plan_transitions[0]
+        s_from, s_to = (self.replan_prepend + self.plan_transitions)[0]
         
         # Detect that we actually moved to a different cluster
         if current_state != self.prev_state:
             # Case 1: we arrived at the expected next state
             if current_state == s_to:
                 logging.info(f"   successfully moved to {s_to}")
-                self.plan_transitions.pop(0)
+                if len(self.replan_prepend) > 0:
+                    self.replan_prepend.pop(0)
+                else:
+                    self.plan_transitions.pop(0)
                 
                 self.pidc_x.reset()
                 self.pidc_y.reset()
                 
-                if not self.plan_transitions:
+                if not (self.replan_prepend + self.plan_transitions):
                     # Plan is finished; do nothing
                     logging.info("Plan finished inside Policy. Returning no-op action.")
                     self.prev_state = current_state
                     return 0
                 
                 # Update to new first transition
-                s_from, s_to = self.plan_transitions[0]
+                s_from, s_to = (self.replan_prepend + self.plan_transitions)[0]
             
             # Case 2: deviated from the plan (not s_from, not s_to)
             elif current_state != s_from:
@@ -219,12 +224,17 @@ class Policy:
                         f"   Replanning failed from {current_state} to {replan_target}. "
                         f"Returning no-op action."
                     )
+                    self.replan_prepend = []
                     self.plan_transitions = []
                     self.prev_state = current_state
                     return 0
                 
-                self.plan_transitions = new_transitions
-                s_from, s_to = self.plan_transitions[0]
+                if self.args.full_replan:
+                    self.plan_transitions = new_transitions
+                else:
+                    self.replan_prepend = new_transitions
+                    
+                s_from, s_to = (self.replan_prepend + self.plan_transitions)[0]
                 
                 self.pidc_x.reset()
                 self.pidc_y.reset()

@@ -84,7 +84,9 @@ if __name__ == "__main__":
     # Analyze distribution of actions (due to duplicates)
     if args.debug >= 2:
         plot_transition_graph(transition_samples)
-        plot_action_vectors(c, transition_samples)
+    if args.debug >= 1:
+        plot_action_vectors(cluster_centers, transition_samples)
+        plot_action_vectors(cluster_centers, transition_samples, arrows=False)
 
     # Aggregate duplicates
     transition_map = {}
