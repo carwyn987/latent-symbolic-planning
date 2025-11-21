@@ -7,12 +7,12 @@ set -euo pipefail
 # -------------------------------
 
 DEBUG_LEVELS=(0)
-NUM_CLUSTERS=(10 20 30)
-NUM_STEPS=(10000 20000)
+NUM_CLUSTERS=(10 20 40 80 160)
+NUM_STEPS=(8000 16000 32000 64000)
 CLUSTERING_METHODS=("kmeans")
 NUM_ACT_APPLY=(10 20)
 HARDCODE_START_GOAL=("True")
-FULL_REPLAN=("True")
+FULL_REPLAN=("True" "False")
 
 # Base output directory
 BASE_OUT="results"

@@ -208,7 +208,7 @@ class Policy:
                 # Decide replanning target
                 if not self.args.full_replan:
                     # Replan back to the next planned state
-                    replan_target = s_to
+                    replan_target = s_from
                     logging.info(f"   full_replan=False, replanning from {current_state} to {replan_target}")
                 else:
                     # Replan directly to the goal

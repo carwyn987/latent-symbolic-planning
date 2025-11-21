@@ -56,7 +56,7 @@ def plot_policy_comparison(df, metric="return"):
     plt.ylabel(ylabel)
     plt.title(f"{ylabel} Comparison by Policy")
     plt.tight_layout()
-    plt.show()
+    # plt.show()
 
 
 def plot_final_policy_vs_param(df, param="num_clusters"):
@@ -81,7 +81,67 @@ def plot_final_policy_vs_param(df, param="num_clusters"):
     plt.ylabel("Mean Return")
     plt.title(f"Final Policy Return vs {param}")
     plt.tight_layout()
-    plt.show()
+    # plt.show()
+
+
+def plot_steps_stratified_by_full_replan(df, metric_col_name, metric_name_title):
+    """
+    Creates a boxplot grouped by policy_name, stratifying by full_replan
+    EXCEPT for the 'random' policy which always has a single merged box.
+    """
+    # Filter down to the metric
+    sub = df[df["metric"] == metric_col_name]
+    if sub.empty:
+        print(f"[Warning] No rows found for metric '{metric_col_name}'")
+        return
+
+    if "full_replan" not in sub.columns:
+        print("[Warning] Column 'full_replan' not found in dataframe.")
+        return
+
+    policies = sorted(sub["policy_name"].unique())
+
+    grouped_data = []
+    labels = []
+
+    for p in policies:
+        policy_df = sub[sub["policy_name"] == p]
+
+        # ------------------------------------------------------
+        # SPECIAL CASE: random policy → always one merged box
+        # ------------------------------------------------------
+        if p.lower() == "random" or p.lower() == "random_policy":
+            vals = policy_df["mean"]
+            grouped_data.append(vals)
+            labels.append("random")
+            continue
+
+        # For all other policies:
+        fr_unique = sorted(policy_df["full_replan"].dropna().unique().tolist())
+
+        # Case 1: policy has both True and False → stratify
+        if set(fr_unique) == {False, True} or set(fr_unique) == {0, 1}:
+            for fr in [True, False]:
+                vals = policy_df[policy_df["full_replan"] == fr]["mean"]
+                grouped_data.append(vals)
+                labels.append(f"{p}\nFR={fr}")
+
+        else:
+            # Case 2: full_replan irrelevant → single box
+            vals = policy_df["mean"]
+            grouped_data.append(vals)
+            labels.append(p)
+
+    # Plot
+    plt.figure(figsize=(10, 6))
+    plt.boxplot(grouped_data, labels=labels)
+    plt.xticks(rotation=45, ha="right")
+    plt.ylabel(metric_name_title)
+    plt.title(f"{metric_name_title} by Policy")
+    plt.tight_layout()
+    # plt.show()
+
+
 
 
 def run_analysis(df):
@@ -94,9 +154,13 @@ def run_analysis(df):
 
     # Sensitivity plots (add more parameters if desired)
     plot_final_policy_vs_param(df, param="num_clusters")
-    plot_final_policy_vs_param(df, param="num_steps")
-    plot_final_policy_vs_param(df, param="num_act_apply")
-    plot_final_policy_vs_param(df, param="clustering_method")
+    #plot_final_policy_vs_param(df, param="num_steps")
+    #plot_final_policy_vs_param(df, param="num_act_apply")
+    #plot_final_policy_vs_param(df, param="clustering_method")
+    plot_steps_stratified_by_full_replan(df, "steps", "Steps")
+    plot_steps_stratified_by_full_replan(df, "return", "Returns")
+
+    plt.show()
 
     print("Analysis complete.")
 

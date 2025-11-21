@@ -127,7 +127,7 @@ def create_overlay_frames(
 
 if __name__ == "__main__":
     create_overlay_frames(
-        "logs/traj_log_28.txt",
+        "logs/traj_log_26.txt",
         fig_size=(8, 4),   # inches
         scale=20,          # world→pixel
         crop=(0.6,0.1)

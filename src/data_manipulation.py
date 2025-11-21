@@ -84,6 +84,8 @@ def data_collection(
                 obs, reward, terminated, truncated, info = env.step(a)
                 env.unwrapped.lander.angle = 0
                 env.unwrapped.lander.linearVelocity = np.clip(env.unwrapped.lander.linearVelocity, a_min=-1.0, a_max=1.0)
+                env.unwrapped.legs[0].angle = 0
+                env.unwrapped.legs[1].angle = 0
                 done = terminated or truncated
                 if done:
                     break

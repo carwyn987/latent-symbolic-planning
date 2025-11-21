@@ -40,10 +40,12 @@ if __name__ == "__main__":
     parser.add_argument("-m", "--clustering_method", default="kmeans", required=False, type=str, help="Clustering method.")
     parser.add_argument("-a", "--num_act_apply", default=20, required=False, type=int, help="Number of actions to apply consecutively during data collection. May help increase exploration.")
     parser.add_argument("-g", "--hardcode_start_goal_states", default=True, required=False, type=bool, help="Whether or not to hardcode the start and goal states to known values, rather than determining them from rollouts.")
-    parser.add_argument("-f", "--full_replan", default=True, required=False, type=bool, help="Whether to fully replan or to correct course back onto original plan.")
+    parser.add_argument("-f", "--full_replan", default="True", choices={"True", "False"}, type=str, help="Whether to fully replan or to correct course back onto original plan.")
     parser.add_argument("-o", "--output", default="logs", required=False, type=str, help="Directory to output metrics.")
     args = parser.parse_args()
     args.env_name = "LunarLander-v3"
+    args.full_replan = True if args.full_replan == "True" else False
+    print("Running with arguments: ", args)
     
     # Create output directory
     os.makedirs(args.output, exist_ok=True)

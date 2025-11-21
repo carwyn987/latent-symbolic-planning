@@ -32,7 +32,7 @@ def eval_policy(args, cluster_centers, transition_samples_simplified, goal_state
     successes = []
     steps = []
 
-    for traj_idx in range(30):
+    for traj_idx in range(50):
         with open(os.path.join("logs", f"traj_log_{traj_idx}.txt"), "w") as f:
             f.write(f"cluster_centers={str([(i,[float(cluster_centers[i][0]), float(cluster_centers[i][1])]) for i in range(len(cluster_centers))])}\n")
             env = get_env(args.env_name)
@@ -88,8 +88,7 @@ def eval_random(args):
     """
     env = get_env(args.env_name) 
        
-    num_epochs = 30
-    max_steps = 1000
+    num_epochs = 50
     returns = []
     successes = []
     steps = []
@@ -106,6 +105,8 @@ def eval_random(args):
             obs, reward, terminated, truncated, info = env.step(action)
             _return += reward
             env.unwrapped.lander.angle = 0
+            env.unwrapped.legs[0].angle = 0
+            env.unwrapped.legs[1].angle = 0
             done = terminated or truncated
         
         
