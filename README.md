@@ -4,7 +4,11 @@ Classical planning is an invaluable approach to solving MDP-like problems, espec
 	
 In this project, I question whether we can compress high-dimensional / continuous representations into domains where classical planning is feasible and propose a methodology to do just that. I plan to achieve consistent solving of the LunarLander environment and compare performance of this method—measured in terms of environment interactions, time before reaching the goal, and total rewards/returns achieved—against traditional RL baselines.
 
-https://github.com/user-attachments/assets/4e526080-605e-49eb-b5c7-0d772b6b67b7
+Correct Plan on Deviations | Full-Replan on Deviations
+--|--
+<img src="media/official/Replan via Corrections.gif" width="450" /> | <img src="media/official/Sample Full-Replan Overlay.gif" width="450" />
+
+_Note: cluster centers and plans manually overlayed for effect. Alignment may be slightly off._
 
 # Methodology
 
